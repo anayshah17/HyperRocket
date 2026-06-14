@@ -69,6 +69,11 @@ public class ThrustCurveMotor implements Motor, Comparable<ThrustCurveMotor>, Se
 	private double unitRotationalInertia;
 	private double unitLongitudinalInertia;
 
+	/** Motor exhaust gas temperature (K). 0 means "use simulation default". */
+	private double exhaustTemperatureK = 0;
+	/** Maximum expected motor casing temperature (K). 0 means unspecified. */
+	private double maxCasingTempK = 0;
+
 	public static class Builder {
 
 		ThrustCurveMotor motor = new ThrustCurveMotor();
@@ -165,6 +170,16 @@ public class ThrustCurveMotor implements Motor, Comparable<ThrustCurveMotor>, Se
 
 		public Builder setSparky(boolean v) {
 			motor.sparky = v;
+			return this;
+		}
+
+		public Builder setExhaustTemperatureK(double v) {
+			motor.exhaustTemperatureK = v;
+			return this;
+		}
+
+		public Builder setMaxCasingTempK(double v) {
+			motor.maxCasingTempK = v;
 			return this;
 		}
 
@@ -691,6 +706,16 @@ public class ThrustCurveMotor implements Motor, Comparable<ThrustCurveMotor>, Se
 
 	public boolean isSparky() {
 		return sparky;
+	}
+
+	/** Returns motor exhaust gas temperature (K), or 0 if not specified. */
+	public double getExhaustTemperatureK() {
+		return exhaustTemperatureK;
+	}
+
+	/** Returns maximum expected motor casing temperature (K), or 0 if not specified. */
+	public double getMaxCasingTempK() {
+		return maxCasingTempK;
 	}
 
 	public double getCutOffTime() {

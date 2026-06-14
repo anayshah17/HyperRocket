@@ -119,6 +119,7 @@ public class SimulationPanel extends JPanel {
 	private final JButton runButton;
 	private final JButton deleteButton;
 	private final JButton plotButton;
+	private final JButton replay3dButton;
 	private final JButton simTableExportButton;
 	private final JPopupMenu pm;
 	private final ColumnVisibilityController columnVisibilityController;
@@ -130,6 +131,7 @@ public class SimulationPanel extends JPanel {
 	private final SimulationAction pasteSimulationAction;
 	private final SimulationAction runSimulationAction;
 	private final SimulationAction plotSimulationAction;
+	private final SimulationAction replay3dAction;
 	private final SimulationAction duplicateSimulationAction;
 	private final SimulationAction deleteSimulationAction;
 	private final SimulationAction simTableExportAction;
@@ -202,6 +204,7 @@ public class SimulationPanel extends JPanel {
 		pasteSimulationAction = new PasteSimulationAction();
 		runSimulationAction = new RunSimulationAction();
 		plotSimulationAction = new PlotSimulationAction();
+		replay3dAction = new Replay3DAction();
 		duplicateSimulationAction = new DuplicateSimulationAction();
 		deleteSimulationAction = new DeleteSimulationAction();
 		simTableExportAction = new ExportSimulationTableAsCSVAction();
@@ -236,7 +239,13 @@ public class SimulationPanel extends JPanel {
 		//// Plot / export button
 		plotButton = new IconButton();
 		RocketActions.tieActionToButton(plotButton, plotSimulationAction, trans.get("simpanel.but.plotexport"));
-		this.add(plotButton, "wrap para");
+		this.add(plotButton, "gapright para");
+
+		//// 3D Replay button
+		replay3dButton = new IconButton();
+		RocketActions.tieActionToButton(replay3dButton, replay3dAction, trans.get("simpanel.but.replay3d"));
+		replay3dButton.setToolTipText(trans.get("simpanel.but.ttip.replay3d"));
+		this.add(replay3dButton, "wrap para");
 
 		//// Run then Dump simulations
 		simTableExportButton = new IconButton();
@@ -516,6 +525,25 @@ public class SimulationPanel extends JPanel {
 		takeTheSpotlight();
 
 		openDialog(true, sim);
+	}
+
+	private void openReplay3D() {
+		int selected = simulationTable.getSelectedRow();
+		if (selected < 0) {
+			return;
+		}
+		selected = simulationTable.convertRowIndexToModel(selected);
+		Simulation sim = document.getSimulations().get(selected);
+
+		if (!sim.hasSimulationData()) {
+			new SimulationRunDialog(SwingUtilities.getWindowAncestor(SimulationPanel.this), document, sim)
+					.setVisible(true);
+		}
+
+		if (sim.hasSimulationData()) {
+			new info.openrocket.swing.gui.simulation.SimulationReplayDialog(
+					SwingUtilities.getWindowAncestor(SimulationPanel.this), document, sim).setVisible(true);
+		}
 	}
 
 	private void deleteSimulations(Simulation[] sims) {
@@ -843,6 +871,7 @@ public class SimulationPanel extends JPanel {
 		deleteSimulationAction.updateEnabledState();
 		runSimulationAction.updateEnabledState();
 		plotSimulationAction.updateEnabledState();
+		replay3dAction.updateEnabledState();
 		simTableExportAction.updateEnabledState();
 		selectedSimsExportAction.updateEnabledState();
 	}
@@ -1189,6 +1218,23 @@ public class SimulationPanel extends JPanel {
 		@Override
 		public void actionPerformed(ActionEvent e) {
 			plotSimulation();
+		}
+
+		@Override
+		public void updateEnabledState() {
+			this.setEnabled(simulationTable.getSelectedRowCount() == 1 && hasValidConfig);
+		}
+	}
+
+	class Replay3DAction extends SimulationAction {
+		public Replay3DAction() {
+			this.putValue(NAME, trans.get("simpanel.but.replay3d"));
+			this.putValue(SHORT_DESCRIPTION, trans.get("simpanel.but.ttip.replay3d"));
+		}
+
+		@Override
+		public void actionPerformed(ActionEvent e) {
+			openReplay3D();
 		}
 
 		@Override

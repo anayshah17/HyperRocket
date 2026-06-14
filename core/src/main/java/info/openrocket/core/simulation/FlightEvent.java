@@ -98,7 +98,37 @@ public class FlightEvent implements Comparable<FlightEvent> {
 		/**
 		 * Simulation exception thrown due to error in OpenRocket code
 		 */
-		EXCEPTION(trans.get("FlightEvent.Type.EXCEPTION"));
+		EXCEPTION(trans.get("FlightEvent.Type.EXCEPTION")),
+
+		/**
+		 * A component has exceeded its material's tensile, compressive, or shear strength limit.
+		 * Source is the failed RocketComponent; data is the failure stress in Pa.
+		 */
+		STRUCTURAL_FAILURE(trans.get("FlightEvent.Type.STRUCTURAL_FAILURE")),
+
+		/**
+		 * A component has reached its melting point or auto-ignition temperature.
+		 * Source is the affected RocketComponent; data is the component temperature in K.
+		 */
+		THERMAL_FAILURE(trans.get("FlightEvent.Type.THERMAL_FAILURE")),
+
+		/**
+		 * An adhesive bond joint has failed due to shear stress exceeding its rated strength.
+		 * Source is the RocketComponent whose bond to its parent failed.
+		 */
+		BOND_FAILURE(trans.get("FlightEvent.Type.BOND_FAILURE")),
+
+		/**
+		 * A recovery device (parachute/streamer) has failed during deployment.
+		 * Source is the RecoveryDevice; data is the deployment velocity in m/s.
+		 */
+		PARACHUTE_FAILURE(trans.get("FlightEvent.Type.PARACHUTE_FAILURE")),
+
+		/**
+		 * A component has physically separated from the rocket (after structural or bond failure).
+		 * Source is the separated RocketComponent.
+		 */
+		COMPONENT_SEPARATION(trans.get("FlightEvent.Type.COMPONENT_SEPARATION"));
 		
 		private final String name;
 		
@@ -293,6 +323,11 @@ public class FlightEvent implements Comparable<FlightEvent> {
 		case ALTITUDE:
 		case TUMBLE:
 		case EXCEPTION:
+		case STRUCTURAL_FAILURE:
+		case THERMAL_FAILURE:
+		case BOND_FAILURE:
+		case PARACHUTE_FAILURE:
+		case COMPONENT_SEPARATION:
 		default:
 		}
 	}

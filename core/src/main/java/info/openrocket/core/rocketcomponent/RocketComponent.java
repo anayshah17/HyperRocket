@@ -158,7 +158,16 @@ public abstract class RocketComponent implements ChangeSource, Cloneable, Iterab
 	 */
 	private boolean isVisible = true;
 
-	
+	/** Angular misalignment of this component's axis relative to its parent axis (radians). */
+	private double angularOffset = 0.0;
+
+	/** Radial displacement of this component from its parent's centerline (meters). */
+	private double radialOffset = 0.0;
+
+	/** Adhesive or mechanical joint attaching this component to its parent. */
+	private BondJoint bondJoint = new BondJoint(BondJoint.BondType.EPOXY, 0.0, 0.0, 0.8);
+
+
 	/**
 	 * Used to invalidate the component after calling {@link #copyFrom(RocketComponent)}.
 	 */
@@ -2819,8 +2828,64 @@ public abstract class RocketComponent implements ChangeSource, Cloneable, Iterab
 		this.isVisible = value;
 		fireComponentChangeEvent(ComponentChangeEvent.GRAPHIC_CHANGE);
 	}
-	
-	///////////  Iterators  //////////	
+
+	/**
+	 * Returns the angular misalignment of this component's axis relative to its parent axis.
+	 * @return angular offset in radians
+	 */
+	public double getAngularOffset() {
+		return angularOffset;
+	}
+
+	/**
+	 * Sets the angular misalignment of this component's axis relative to its parent axis.
+	 * @param angleRad angular offset in radians
+	 */
+	public void setAngularOffset(double angleRad) {
+		if (Double.compare(this.angularOffset, angleRad) == 0) {
+			return;
+		}
+		this.angularOffset = angleRad;
+		fireComponentChangeEvent(ComponentChangeEvent.NONFUNCTIONAL_CHANGE);
+	}
+
+	/**
+	 * Returns the radial displacement of this component from its parent's centerline.
+	 * @return radial offset in meters
+	 */
+	public double getRadialOffset() {
+		return radialOffset;
+	}
+
+	/**
+	 * Sets the radial displacement of this component from its parent's centerline.
+	 * @param offsetM radial offset in meters
+	 */
+	public void setRadialOffset(double offsetM) {
+		if (Double.compare(this.radialOffset, offsetM) == 0) {
+			return;
+		}
+		this.radialOffset = Math.max(0.0, offsetM);
+		fireComponentChangeEvent(ComponentChangeEvent.NONFUNCTIONAL_CHANGE);
+	}
+
+	/**
+	 * Returns the bond joint that attaches this component to its parent.
+	 */
+	public BondJoint getBondJoint() {
+		return bondJoint;
+	}
+
+	/**
+	 * Sets the bond joint that attaches this component to its parent.
+	 */
+	public void setBondJoint(BondJoint joint) {
+		if (joint == null) return;
+		this.bondJoint = joint;
+		fireComponentChangeEvent(ComponentChangeEvent.NONFUNCTIONAL_CHANGE);
+	}
+
+	///////////  Iterators  //////////
 	
 	/**
 	 * Returns an iterator that iterates over all children and sub-children.
@@ -3016,6 +3081,11 @@ public abstract class RocketComponent implements ChangeSource, Cloneable, Iterab
 		this.displayOrder_back = src.displayOrder_back;
 		this.configListeners = new LinkedList<>();
 		this.bypassComponentChangeEvent = false;
+		this.angularOffset = src.angularOffset;
+		this.radialOffset = src.radialOffset;
+		this.bondJoint = new BondJoint(src.bondJoint.getType(), src.bondJoint.getBondArea(),
+				src.bondJoint.getShearStrength(), src.bondJoint.getQualityFactor(),
+				src.bondJoint.getTemperatureLimit());
 		clearCoordinateCaches();
 		if (this instanceof InsideColorComponent && src instanceof InsideColorComponent) {
 			InsideColorComponentHandler icch = new InsideColorComponentHandler(this);

@@ -155,6 +155,22 @@ public class FlightDataType implements Comparable<FlightDataType>, Groupable<Fli
 	public static final FlightDataType TYPE_ORIENTATION_PHI = newType(trans.get("FlightDataType.TYPE_ORIENTATION_PHI"),
 			"\u03a6", UnitGroup.UNITS_ANGLE,
 			FlightDataTypeGroup.ORIENTATION, 5);
+	//// Orientation quaternion W component
+	public static final FlightDataType TYPE_ORIENTATION_QW = newType(trans.get("FlightDataType.TYPE_ORIENTATION_QW"),
+			"Qw", UnitGroup.UNITS_COEFFICIENT,
+			FlightDataTypeGroup.ORIENTATION, 6);
+	//// Orientation quaternion X component
+	public static final FlightDataType TYPE_ORIENTATION_QX = newType(trans.get("FlightDataType.TYPE_ORIENTATION_QX"),
+			"Qx", UnitGroup.UNITS_COEFFICIENT,
+			FlightDataTypeGroup.ORIENTATION, 7);
+	//// Orientation quaternion Y component
+	public static final FlightDataType TYPE_ORIENTATION_QY = newType(trans.get("FlightDataType.TYPE_ORIENTATION_QY"),
+			"Qy", UnitGroup.UNITS_COEFFICIENT,
+			FlightDataTypeGroup.ORIENTATION, 8);
+	//// Orientation quaternion Z component
+	public static final FlightDataType TYPE_ORIENTATION_QZ = newType(trans.get("FlightDataType.TYPE_ORIENTATION_QZ"),
+			"Qz", UnitGroup.UNITS_COEFFICIENT,
+			FlightDataTypeGroup.ORIENTATION, 9);
 	// Mass and inertia
 	//// Mass
 	public static final FlightDataType TYPE_MASS = newType(trans.get("FlightDataType.TYPE_MASS"), "m",
@@ -418,6 +434,10 @@ public class FlightDataType implements Comparable<FlightDataType>, Groupable<Fli
 			TYPE_REFERENCE_AREA,
 			TYPE_ORIENTATION_THETA,
 			TYPE_ORIENTATION_PHI,
+			TYPE_ORIENTATION_QW,
+			TYPE_ORIENTATION_QX,
+			TYPE_ORIENTATION_QY,
+			TYPE_ORIENTATION_QZ,
 			TYPE_WIND_VELOCITY,
 			TYPE_WIND_DIRECTION,
 			TYPE_AIR_TEMPERATURE,

@@ -221,10 +221,30 @@ public class RocketComponentSaver {
 		if (shearModulus != 0.0 || mat.isUserDefined()) {
 			result += " shearModulus=\"" + shearModulus + "\"";
 		}
-		
+
+		// Persist structural / thermal properties for user-defined materials only.
+		// Stock materials are reconstructed from the database (which supplies these
+		// values), so writing them would bloat every file; unset (0) values are also
+		// omitted.  This keeps older readers backward compatible.
+		if (mat.isUserDefined()) {
+			result += optionalAttr("tensileStrength", mat.getTensileStrength());
+			result += optionalAttr("compressiveStrength", mat.getCompressiveStrength());
+			result += optionalAttr("shearStrength", mat.getShearStrength());
+			result += optionalAttr("yieldStrength", mat.getYieldStrength());
+			result += optionalAttr("meltingPoint", mat.getMeltingPoint());
+			result += optionalAttr("autoIgnitionTemp", mat.getAutoIgnitionTemp());
+			result += optionalAttr("thermalConductivity", mat.getThermalConductivity());
+			result += optionalAttr("specificHeat", mat.getSpecificHeat());
+		}
+
 		result += " group=\"" + mat.getGroup().getDatabaseString() + "\">" +
 				TextUtil.escapeXML(baseName) + "</" + tag + ">";
 		return result;
+	}
+
+	/** Renders a {@code name="value"} XML attribute fragment, or "" when value &le; 0. */
+	private static String optionalAttr(String name, double value) {
+		return value > 0 ? " " + name + "=\"" + value + "\"" : "";
 	}
 	
 	

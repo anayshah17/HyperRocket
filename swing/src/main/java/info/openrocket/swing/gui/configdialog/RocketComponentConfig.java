@@ -39,6 +39,7 @@ import javax.swing.border.Border;
 import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
 
+import info.openrocket.core.rocketcomponent.BondJoint;
 import info.openrocket.core.rocketcomponent.FinSet;
 import info.openrocket.core.rocketcomponent.NoseCone;
 import info.openrocket.core.rocketcomponent.RocketComponent;
@@ -202,6 +203,14 @@ public class RocketComponentConfig extends JPanel implements Invalidatable, Inva
 			tabbedPane.addTab(trans.get("RocketCompCfg.tab.Appearance"), null, appearancePanel,
 					trans.get("RocketCompCfg.tab.Appearance.ttip"));
 		}
+
+		//// Misalignment tab
+		tabbedPane.addTab(trans.get("RocketCompCfg.tab.Misalignment"), null, misalignmentTab(),
+				trans.get("RocketCompCfg.tab.Misalignment.ttip"));
+
+		//// Bond Joint tab
+		tabbedPane.addTab(trans.get("RocketCompCfg.tab.BondJoint"), null, bondJointTab(),
+				trans.get("RocketCompCfg.tab.BondJoint.ttip"));
 
 		//// Comment and Specify a comment for the component
 		tabbedPane.addTab(trans.get("RocketCompCfg.tab.Comment"), null, commentTab(),
@@ -806,6 +815,121 @@ public class RocketComponentConfig extends JPanel implements Invalidatable, Inva
 	}
 	
 	
+	private JPanel misalignmentTab() {
+		JPanel panel = new JPanel(new MigLayout("fill, ins 10", "[][65lp::][30lp::][]"));
+
+		JPanel inner = new JPanel(new MigLayout("fillx, gap rel unrel", "[][65lp::][30lp::][]"));
+		inner.setBorder(BorderFactory.createTitledBorder(trans.get("RocketCompCfg.border.Misalignment")));
+
+		//// Angular offset
+		JLabel lblAng = new JLabel(trans.get("RocketCompCfg.lbl.AngularOffset"));
+		lblAng.setToolTipText(trans.get("RocketCompCfg.lbl.ttip.AngularOffset"));
+		inner.add(lblAng);
+
+		DoubleModel angModel = new DoubleModel(component, "AngularOffset", UnitGroup.UNITS_ANGLE, 0);
+		register(angModel);
+		JSpinner angSpinner = new JSpinner(angModel.getSpinnerModel());
+		angSpinner.setEditor(new SpinnerEditor(angSpinner));
+		inner.add(angSpinner, "growx");
+		order.add(((SpinnerEditor) angSpinner.getEditor()).getTextField());
+		inner.add(new UnitSelector(angModel), "growx");
+		inner.add(new BasicSlider(angModel.getSliderModel(0, Math.toRadians(5))), "w 100lp, wrap");
+
+		//// Radial offset
+		JLabel lblRad = new JLabel(trans.get("RocketCompCfg.lbl.RadialOffset"));
+		lblRad.setToolTipText(trans.get("RocketCompCfg.lbl.ttip.RadialOffset"));
+		inner.add(lblRad);
+
+		DoubleModel radModel = new DoubleModel(component, "RadialOffset", UnitGroup.UNITS_LENGTH, 0);
+		register(radModel);
+		JSpinner radSpinner = new JSpinner(radModel.getSpinnerModel());
+		radSpinner.setEditor(new SpinnerEditor(radSpinner));
+		inner.add(radSpinner, "growx");
+		order.add(((SpinnerEditor) radSpinner.getEditor()).getTextField());
+		inner.add(new UnitSelector(radModel), "growx");
+		inner.add(new BasicSlider(radModel.getSliderModel(0, 0.05)), "w 100lp, wrap");
+
+		panel.add(inner, "span, growx, wrap para");
+		return panel;
+	}
+
+
+	private JPanel bondJointTab() {
+		JPanel panel = new JPanel(new MigLayout("fill, ins 10", "[][grow][]"));
+
+		JPanel inner = new JPanel(new MigLayout("fillx, gap rel unrel", "[][grow][]"));
+		inner.setBorder(BorderFactory.createTitledBorder(trans.get("RocketCompCfg.border.BondJoint")));
+
+		final BondJoint joint = component.getBondJoint();
+
+		//// Joint type
+		JLabel lblType = new JLabel(trans.get("RocketCompCfg.lbl.BondType"));
+		lblType.setToolTipText(trans.get("RocketCompCfg.lbl.ttip.BondType"));
+		inner.add(lblType);
+		JComboBox<BondJoint.BondType> typeCombo = new JComboBox<>(BondJoint.BondType.values());
+		typeCombo.setSelectedItem(joint.getType());
+		typeCombo.addActionListener(e -> {
+			joint.setType((BondJoint.BondType) typeCombo.getSelectedItem());
+			component.setBondJoint(joint);
+		});
+		inner.add(typeCombo, "span 2, growx, wrap");
+
+		//// Bond area
+		JLabel lblArea = new JLabel(trans.get("RocketCompCfg.lbl.BondArea"));
+		lblArea.setToolTipText(trans.get("RocketCompCfg.lbl.ttip.BondArea"));
+		inner.add(lblArea);
+		javax.swing.JSpinner areaSpinner = new javax.swing.JSpinner(
+				new javax.swing.SpinnerNumberModel(joint.getBondArea() * 1e4, 0.0, 10000.0, 0.1));
+		areaSpinner.setToolTipText("Bond area in cm² (1 cm² = 1e-4 m²)");
+		areaSpinner.addChangeListener(e -> {
+			joint.setBondArea(((Number) areaSpinner.getValue()).doubleValue() * 1e-4);
+			component.setBondJoint(joint);
+		});
+		inner.add(areaSpinner, "span 2, growx, wrap");
+
+		//// Shear strength
+		JLabel lblShear = new JLabel(trans.get("RocketCompCfg.lbl.JointShearStrength"));
+		lblShear.setToolTipText(trans.get("RocketCompCfg.lbl.ttip.JointShearStrength"));
+		inner.add(lblShear);
+		javax.swing.JSpinner shearSpinner = new javax.swing.JSpinner(
+				new javax.swing.SpinnerNumberModel(joint.getShearStrength() * 1e-6, 0.0, 10000.0, 0.5));
+		shearSpinner.setToolTipText("Shear strength in MPa");
+		shearSpinner.addChangeListener(e -> {
+			joint.setShearStrength(((Number) shearSpinner.getValue()).doubleValue() * 1e6);
+			component.setBondJoint(joint);
+		});
+		inner.add(shearSpinner, "span 2, growx, wrap");
+
+		//// Quality factor
+		JLabel lblQuality = new JLabel(trans.get("RocketCompCfg.lbl.QualityFactor"));
+		lblQuality.setToolTipText(trans.get("RocketCompCfg.lbl.ttip.QualityFactor"));
+		inner.add(lblQuality);
+		javax.swing.JSpinner qualitySpinner = new javax.swing.JSpinner(
+				new javax.swing.SpinnerNumberModel(joint.getQualityFactor(), 0.0, 1.0, 0.05));
+		qualitySpinner.addChangeListener(e -> {
+			joint.setQualityFactor(((Number) qualitySpinner.getValue()).doubleValue());
+			component.setBondJoint(joint);
+		});
+		inner.add(qualitySpinner, "span 2, growx, wrap");
+
+		//// Temperature limit
+		JLabel lblTemp = new JLabel(trans.get("RocketCompCfg.lbl.TemperatureLimit"));
+		lblTemp.setToolTipText(trans.get("RocketCompCfg.lbl.ttip.TemperatureLimit"));
+		inner.add(lblTemp);
+		javax.swing.JSpinner tempSpinner = new javax.swing.JSpinner(
+				new javax.swing.SpinnerNumberModel(joint.getTemperatureLimit(), 0.0, 5000.0, 10.0));
+		tempSpinner.setToolTipText("0 = not specified");
+		tempSpinner.addChangeListener(e -> {
+			joint.setTemperatureLimit(((Number) tempSpinner.getValue()).doubleValue());
+			component.setBondJoint(joint);
+		});
+		inner.add(tempSpinner, "span 2, growx, wrap");
+
+		panel.add(inner, "span, growx, wrap para");
+		return panel;
+	}
+
+
 	private JPanel commentTab() {
 		JPanel panel = new JPanel(new MigLayout("fill","[]","[][grow]"));
 		

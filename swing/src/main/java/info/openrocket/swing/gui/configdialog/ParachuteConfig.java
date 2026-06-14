@@ -295,10 +295,47 @@ public class ParachuteConfig extends RecoveryDeviceConfig {
 			panel.add(deploymentPanel, "spanx, growx, wrap para");
 		}
 
+		// ---- Recovery Integrity ----
+		{
+			JPanel integrityPanel = new JPanel(new MigLayout("fillx, gap rel unrel", "[][65lp::][30lp::][]"));
+			integrityPanel.setBorder(BorderFactory.createTitledBorder(trans.get("ParachuteCfg.border.RecoveryIntegrity")));
+
+			integrityPanel.add(new JLabel(trans.get("ParachuteCfg.lbl.ShroudLineStrength")));
+			DoubleModel shroudStrM = new DoubleModel(component, "ShroudLineStrength", UnitGroup.UNITS_FORCE, 0);
+			register(shroudStrM);
+			spin = new JSpinner(shroudStrM.getSpinnerModel());
+			spin.setToolTipText(trans.get("ParachuteCfg.lbl.ttip.ShroudLineStrength"));
+			spin.setEditor(new SpinnerEditor(spin));
+			integrityPanel.add(spin, "growx");
+			order.add(((SpinnerEditor) spin.getEditor()).getTextField());
+			integrityPanel.add(new UnitSelector(shroudStrM), "growx, wrap");
+
+			integrityPanel.add(new JLabel(trans.get("ParachuteCfg.lbl.MaxDeployVelocity")));
+			DoubleModel maxVelM = new DoubleModel(component, "MaxDeploymentVelocity", UnitGroup.UNITS_VELOCITY, 0);
+			register(maxVelM);
+			spin = new JSpinner(maxVelM.getSpinnerModel());
+			spin.setToolTipText(trans.get("ParachuteCfg.lbl.ttip.MaxDeployVelocity"));
+			spin.setEditor(new SpinnerEditor(spin));
+			integrityPanel.add(spin, "growx");
+			order.add(((SpinnerEditor) spin.getEditor()).getTextField());
+			integrityPanel.add(new UnitSelector(maxVelM), "growx, wrap");
+
+			integrityPanel.add(new JLabel(trans.get("ParachuteCfg.lbl.OpeningShockFactor")));
+			DoubleModel shockM = new DoubleModel(component, "OpeningShockFactor", UnitGroup.UNITS_COEFFICIENT, 0);
+			register(shockM);
+			spin = new JSpinner(shockM.getSpinnerModel());
+			spin.setToolTipText(trans.get("ParachuteCfg.lbl.ttip.OpeningShockFactor"));
+			spin.setEditor(new SpinnerEditor(spin));
+			integrityPanel.add(spin, "growx, wrap");
+			order.add(((SpinnerEditor) spin.getEditor()).getTextField());
+
+			panel.add(integrityPanel, "spanx, growx, wrap para");
+		}
+
 		primary.add(panel, "grow");
-		
+
 		updateFields();
-		
+
 		//// General and General properties
 		tabbedPane.insertTab(trans.get("ParachuteCfg.tab.General"), null, primary, trans.get("ParachuteCfg.tab.ttip.General"), 0);
 		//// Radial position and Radial position configuration

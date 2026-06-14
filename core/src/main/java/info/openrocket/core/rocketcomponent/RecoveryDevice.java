@@ -29,6 +29,13 @@ public abstract class RecoveryDevice extends MassObject implements FlightConfigu
 	private final Material.Surface defaultMaterial;
 	private Material.Surface material;
 
+	/** Rated breaking load per shroud line (N). Zero means not specified. */
+	private double shroudLineStrength = 0.0;
+	/** Maximum safe deployment velocity (m/s). Zero means not specified. */
+	private double maxDeploymentVelocity = 0.0;
+	/** Opening shock multiplier (dimensionless). Typical range 1.0–2.0. */
+	private double openingShockFactor = 1.0;
+
 	private FlightConfigurableParameterSet<DeploymentConfiguration> deploymentConfigurations;
 	
 	public RecoveryDevice() {
@@ -165,10 +172,49 @@ public abstract class RecoveryDevice extends MassObject implements FlightConfigu
 		loadFromPreset(preset, (Object[]) null);
 	}
 
+	public double getShroudLineStrength() {
+		return shroudLineStrength;
+	}
+
+	public void setShroudLineStrength(double strength) {
+		if (MathUtil.equals(this.shroudLineStrength, strength)) {
+			return;
+		}
+		this.shroudLineStrength = Math.max(0.0, strength);
+		fireComponentChangeEvent(ComponentChangeEvent.NONFUNCTIONAL_CHANGE);
+	}
+
+	public double getMaxDeploymentVelocity() {
+		return maxDeploymentVelocity;
+	}
+
+	public void setMaxDeploymentVelocity(double velocity) {
+		if (MathUtil.equals(this.maxDeploymentVelocity, velocity)) {
+			return;
+		}
+		this.maxDeploymentVelocity = Math.max(0.0, velocity);
+		fireComponentChangeEvent(ComponentChangeEvent.NONFUNCTIONAL_CHANGE);
+	}
+
+	public double getOpeningShockFactor() {
+		return openingShockFactor;
+	}
+
+	public void setOpeningShockFactor(double factor) {
+		if (MathUtil.equals(this.openingShockFactor, factor)) {
+			return;
+		}
+		this.openingShockFactor = Math.max(0.0, factor);
+		fireComponentChangeEvent(ComponentChangeEvent.NONFUNCTIONAL_CHANGE);
+	}
+
 	@Override
 	protected RocketComponent copyWithOriginalID() {
 		RecoveryDevice copy = (RecoveryDevice) super.copyWithOriginalID();
 		copy.deploymentConfigurations = new FlightConfigurableParameterSet<>(deploymentConfigurations);
+		copy.shroudLineStrength = this.shroudLineStrength;
+		copy.maxDeploymentVelocity = this.maxDeploymentVelocity;
+		copy.openingShockFactor = this.openingShockFactor;
 		return copy;
 	}
 

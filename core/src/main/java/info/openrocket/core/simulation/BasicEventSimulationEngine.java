@@ -655,6 +655,14 @@ public class BasicEventSimulationEngine implements SimulationEngine {
 				// nothing special needs to be done for this event
 				break;
 			
+			case STRUCTURAL_FAILURE:
+			case THERMAL_FAILURE:
+			case BOND_FAILURE:
+			case PARACHUTE_FAILURE:
+			case COMPONENT_SEPARATION:
+				currentStatus.getFlightDataBranch().addEvent(event);
+				break;
+
 			case TUMBLE:
 				// Inhibit if we've deployed a parachute or we're on the ground
 				if ((currentStatus.getDeployedRecoveryDevices().size() > 0) || currentStatus.isLanded())

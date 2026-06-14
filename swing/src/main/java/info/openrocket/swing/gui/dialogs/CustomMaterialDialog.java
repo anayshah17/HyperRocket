@@ -8,14 +8,17 @@ import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.List;
 
+import javax.swing.BorderFactory;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
 import javax.swing.JDialog;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import javax.swing.JScrollPane;
 import javax.swing.JSpinner;
 import javax.swing.JTextField;
+import javax.swing.SpinnerNumberModel;
 
 import info.openrocket.core.database.Databases;
 import info.openrocket.core.l10n.Translator;
@@ -50,6 +53,18 @@ public class CustomMaterialDialog extends JDialog {
 	private final UnitSelector shearModulusUnit;
 	private JComboBox<MaterialGroup> groupBox;
 	private JCheckBox addBox;
+
+	// Structural strength properties (backed by DoubleModel for unit conversion)
+	private DoubleModel tensileStrengthModel;
+	private DoubleModel compressiveStrengthModel;
+	private DoubleModel shearStrengthModel;
+	private DoubleModel yieldStrengthModel;
+
+	// Thermal properties — temperature uses DoubleModel; conductivity and specific heat use plain spinners
+	private DoubleModel meltingPointModel;
+	private DoubleModel autoIgnitionTempModel;
+	private JSpinner conductivitySpinner;
+	private JSpinner specificHeatSpinner;
 
 	public CustomMaterialDialog(Window parent, Material material, boolean saveOption, boolean addToApplicationDatabase,
 								String title) {
@@ -157,6 +172,54 @@ public class CustomMaterialDialog extends JDialog {
 		panel.add(groupBox, "span, growx, wrap");
 
 
+		// ---- Structural properties panel ----
+		JPanel structPanel = new JPanel(new MigLayout("fillx, gap rel unrel", "[][65lp::][30lp::][]"));
+		structPanel.setBorder(BorderFactory.createTitledBorder(trans.get("custmatdlg.border.StructuralProperties")));
+
+		double initTensile = (material != null) ? material.getTensileStrength() : 0.0;
+		tensileStrengthModel = new DoubleModel(initTensile, UnitGroup.UNITS_SHEAR_MODULUS, 0);
+		addStrengthRow(structPanel, "custmatdlg.lbl.TensileStrength", tensileStrengthModel);
+
+		double initCompressive = (material != null) ? material.getCompressiveStrength() : 0.0;
+		compressiveStrengthModel = new DoubleModel(initCompressive, UnitGroup.UNITS_SHEAR_MODULUS, 0);
+		addStrengthRow(structPanel, "custmatdlg.lbl.CompressiveStrength", compressiveStrengthModel);
+
+		double initShearStr = (material != null) ? material.getShearStrength() : 0.0;
+		shearStrengthModel = new DoubleModel(initShearStr, UnitGroup.UNITS_SHEAR_MODULUS, 0);
+		addStrengthRow(structPanel, "custmatdlg.lbl.ShearStrength", shearStrengthModel);
+
+		double initYield = (material != null) ? material.getYieldStrength() : 0.0;
+		yieldStrengthModel = new DoubleModel(initYield, UnitGroup.UNITS_SHEAR_MODULUS, 0);
+		addStrengthRow(structPanel, "custmatdlg.lbl.YieldStrength", yieldStrengthModel);
+
+		panel.add(structPanel, "span, growx, wrap");
+
+		// ---- Thermal properties panel ----
+		JPanel thermalPanel = new JPanel(new MigLayout("fillx, gap rel unrel", "[][65lp::][30lp::][]"));
+		thermalPanel.setBorder(BorderFactory.createTitledBorder(trans.get("custmatdlg.border.ThermalProperties")));
+
+		double initMelting = (material != null) ? material.getMeltingPoint() : 0.0;
+		meltingPointModel = new DoubleModel(initMelting, UnitGroup.UNITS_TEMPERATURE, 0);
+		addTempRow(thermalPanel, "custmatdlg.lbl.MeltingPoint", meltingPointModel);
+
+		double initAutoIgn = (material != null) ? material.getAutoIgnitionTemp() : 0.0;
+		autoIgnitionTempModel = new DoubleModel(initAutoIgn, UnitGroup.UNITS_TEMPERATURE, 0);
+		addTempRow(thermalPanel, "custmatdlg.lbl.AutoIgnitionTemp", autoIgnitionTempModel);
+
+		double initCond = (material != null) ? material.getThermalConductivity() : 0.0;
+		conductivitySpinner = new JSpinner(new SpinnerNumberModel(initCond, 0.0, 10000.0, 0.1));
+		conductivitySpinner.setToolTipText(trans.get("custmatdlg.lbl.ttip.ThermalConductivity"));
+		thermalPanel.add(new JLabel(trans.get("custmatdlg.lbl.ThermalConductivity")));
+		thermalPanel.add(conductivitySpinner, "span 3, growx, wrap");
+
+		double initSH = (material != null) ? material.getSpecificHeat() : 0.0;
+		specificHeatSpinner = new JSpinner(new SpinnerNumberModel(initSH, 0.0, 100000.0, 1.0));
+		specificHeatSpinner.setToolTipText(trans.get("custmatdlg.lbl.ttip.SpecificHeat"));
+		thermalPanel.add(new JLabel(trans.get("custmatdlg.lbl.SpecificHeat")));
+		thermalPanel.add(specificHeatSpinner, "span 3, growx, wrap");
+
+		panel.add(thermalPanel, "span, growx, wrap");
+
 		// Save option
 		if (saveOption) {
 			//// Add material to application database
@@ -188,8 +251,16 @@ public class CustomMaterialDialog extends JDialog {
 		});
 		panel.add(closeButton, "tag cancel");
 
-		this.setContentPane(panel);
+		JScrollPane scroll = new JScrollPane(panel,
+				JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED,
+				JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+		scroll.setBorder(null);
+		this.setContentPane(scroll);
 		this.pack();
+		java.awt.Dimension screen = java.awt.Toolkit.getDefaultToolkit().getScreenSize();
+		if (getHeight() > screen.height * 0.9) {
+			setSize(getWidth(), (int) (screen.height * 0.9));
+		}
 		this.setLocationByPlatform(true);
 		GUIUtil.setDisposableDialogOptions(this, okButton);
 	}
@@ -228,10 +299,48 @@ public class CustomMaterialDialog extends JDialog {
 		materialShearModulus = this.shearModulus != null ? this.shearModulus.getValue() : 0.0;
 		group = (MaterialGroup) groupBox.getSelectedItem();
 		
-		return Databases.findMaterial(type, name, materialDensity, materialShearModulus, group);
+		Material mat = Databases.findMaterial(type, name, materialDensity, materialShearModulus, group);
+		// Apply the new physical properties
+		if (tensileStrengthModel != null) {
+			mat.setStrengthProperties(
+					tensileStrengthModel.getValue(),
+					compressiveStrengthModel.getValue(),
+					shearStrengthModel.getValue(),
+					yieldStrengthModel.getValue());
+		}
+		if (meltingPointModel != null) {
+			mat.setThermalProperties(
+					meltingPointModel.getValue(),
+					autoIgnitionTempModel.getValue(),
+					((Number) conductivitySpinner.getValue()).doubleValue(),
+					((Number) specificHeatSpinner.getValue()).doubleValue());
+		}
+		return mat;
 	}
-	
-	
+
+	private void addStrengthRow(JPanel target, String labelKey, DoubleModel model) {
+		JLabel lbl = new JLabel(trans.get(labelKey));
+		lbl.setToolTipText(trans.get(labelKey.replace("lbl.", "lbl.ttip.")));
+		target.add(lbl);
+		JSpinner spin = new JSpinner(model.getSpinnerModel());
+		spin.setEditor(new info.openrocket.swing.gui.SpinnerEditor(spin));
+		target.add(spin, "growx");
+		target.add(new UnitSelector(model), "growx");
+		target.add(new javax.swing.JPanel(), "growx, wrap");
+	}
+
+	private void addTempRow(JPanel target, String labelKey, DoubleModel model) {
+		JLabel lbl = new JLabel(trans.get(labelKey));
+		lbl.setToolTipText(trans.get(labelKey.replace("lbl.", "lbl.ttip.")));
+		target.add(lbl);
+		JSpinner spin = new JSpinner(model.getSpinnerModel());
+		spin.setEditor(new info.openrocket.swing.gui.SpinnerEditor(spin));
+		target.add(spin, "growx");
+		target.add(new UnitSelector(model), "growx");
+		target.add(new javax.swing.JPanel(), "growx, wrap");
+	}
+
+
 	private void updateDensityModel() {
 		if (originalMaterial != null) {
 			if (density == null) {

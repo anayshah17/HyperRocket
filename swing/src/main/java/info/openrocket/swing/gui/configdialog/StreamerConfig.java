@@ -266,11 +266,49 @@ public class StreamerConfig extends RecoveryDeviceConfig {
 
 		deploymentPanel.add(new StyledLabel(CommonStrings.override_description, -1), "spanx, wrap");
 
-		panel.add(deploymentPanel, "growx");
+		panel.add(deploymentPanel, "growx, wrap");
+
+		// ---- Recovery Integrity ----
+		{
+			JPanel integrityPanel = new JPanel(new MigLayout("fillx, gap rel unrel", "[][65lp::][30lp::][]"));
+			integrityPanel.setBorder(BorderFactory.createTitledBorder(trans.get("StreamerCfg.border.RecoveryIntegrity")));
+
+			integrityPanel.add(new JLabel(trans.get("StreamerCfg.lbl.ShroudLineStrength")));
+			DoubleModel shroudStrM = new DoubleModel(component, "ShroudLineStrength", UnitGroup.UNITS_FORCE, 0);
+			register(shroudStrM);
+			spin = new JSpinner(shroudStrM.getSpinnerModel());
+			spin.setToolTipText(trans.get("StreamerCfg.lbl.ttip.ShroudLineStrength"));
+			spin.setEditor(new SpinnerEditor(spin));
+			integrityPanel.add(spin, "growx");
+			order.add(((SpinnerEditor) spin.getEditor()).getTextField());
+			integrityPanel.add(new UnitSelector(shroudStrM), "growx, wrap");
+
+			integrityPanel.add(new JLabel(trans.get("StreamerCfg.lbl.MaxDeployVelocity")));
+			DoubleModel maxVelM = new DoubleModel(component, "MaxDeploymentVelocity", UnitGroup.UNITS_VELOCITY, 0);
+			register(maxVelM);
+			spin = new JSpinner(maxVelM.getSpinnerModel());
+			spin.setToolTipText(trans.get("StreamerCfg.lbl.ttip.MaxDeployVelocity"));
+			spin.setEditor(new SpinnerEditor(spin));
+			integrityPanel.add(spin, "growx");
+			order.add(((SpinnerEditor) spin.getEditor()).getTextField());
+			integrityPanel.add(new UnitSelector(maxVelM), "growx, wrap");
+
+			integrityPanel.add(new JLabel(trans.get("StreamerCfg.lbl.OpeningShockFactor")));
+			DoubleModel shockM = new DoubleModel(component, "OpeningShockFactor", UnitGroup.UNITS_COEFFICIENT, 0);
+			register(shockM);
+			spin = new JSpinner(shockM.getSpinnerModel());
+			spin.setToolTipText(trans.get("StreamerCfg.lbl.ttip.OpeningShockFactor"));
+			spin.setEditor(new SpinnerEditor(spin));
+			integrityPanel.add(spin, "growx, wrap");
+			order.add(((SpinnerEditor) spin.getEditor()).getTextField());
+
+			panel.add(integrityPanel, "growx");
+		}
+
 		primary.add(panel, "grow");
-		
+
 		updateFields();
-		
+
 		//// General and General properties
 		tabbedPane.insertTab(trans.get("StreamerCfg.tab.General"), null, primary,
 				trans.get("StreamerCfg.tab.ttip.General"), 0);

@@ -97,6 +97,42 @@ class MaterialSetter implements Setter {
 			mat = Databases.findMaterial(type, name, density, shearModulus, group);
 		}
 
+		// Parse optional structural / thermal properties.  When present, apply them to
+		// a user-defined copy so we never mutate a shared database material instance.
+		double tensile = optionalDouble(attributes, "tensileStrength", warnings);
+		double compressive = optionalDouble(attributes, "compressiveStrength", warnings);
+		double shearStrength = optionalDouble(attributes, "shearStrength", warnings);
+		double yield = optionalDouble(attributes, "yieldStrength", warnings);
+		double melting = optionalDouble(attributes, "meltingPoint", warnings);
+		double autoIgnition = optionalDouble(attributes, "autoIgnitionTemp", warnings);
+		double conductivity = optionalDouble(attributes, "thermalConductivity", warnings);
+		double specificHeat = optionalDouble(attributes, "specificHeat", warnings);
+
+		boolean hasPhysical = tensile > 0 || compressive > 0 || shearStrength > 0 || yield > 0
+				|| melting > 0 || autoIgnition > 0 || conductivity > 0 || specificHeat > 0;
+		if (hasPhysical) {
+			Material copy = Material.newMaterial(type, mat.getName(), mat.getDensity(),
+					mat.getInPlaneShearModulus(), mat.getGroup(), true);
+			copy.setStrengthProperties(tensile, compressive, shearStrength, yield);
+			copy.setThermalProperties(melting, autoIgnition, conductivity, specificHeat);
+			mat = copy;
+		}
+
 		setMethod.invoke(c, mat);
+	}
+
+	/** Parses an optional positive double attribute, removing it; returns 0 if absent/invalid. */
+	private static double optionalDouble(HashMap<String, String> attributes, String key,
+			WarningSet warnings) {
+		String str = attributes.remove(key);
+		if (str == null) {
+			return 0.0;
+		}
+		try {
+			return Double.parseDouble(str);
+		} catch (NumberFormatException e) {
+			warnings.add(Warning.fromString("Illegal " + key + " value, ignoring."));
+			return 0.0;
+		}
 	}
 }

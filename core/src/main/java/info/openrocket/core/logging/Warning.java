@@ -503,4 +503,163 @@ public abstract class Warning extends Message {
 
 	/** Simulation branch contains no data */
 	public static final Warning EMPTY_BRANCH = new Other(trans.get("Warning.EMPTY_BRANCH"), MessagePriority.HIGH);
+
+
+	// ---- Failure simulation warnings ----
+
+	/**
+	 * A component's axial stress has exceeded its material's strength limit.
+	 */
+	public static class StructuralFailure extends Warning {
+		private final RocketComponent component;
+		private final double stressPa;
+
+		public StructuralFailure(RocketComponent component, double stressPa) {
+			this.component = component;
+			this.stressPa = stressPa;
+			setPriority(MessagePriority.HIGH);
+		}
+
+		public RocketComponent getComponent() {
+			return component;
+		}
+
+		public double getStressPa() {
+			return stressPa;
+		}
+
+		@Override
+		public String getMessageDescription() {
+			return trans.get("Warning.StructuralFailure.str") + " "
+					+ component.getName() + " ("
+					+ String.format("%.1f", stressPa / 1e6) + " MPa)";
+		}
+
+		@Override
+		public boolean replaceBy(Message other) {
+			return false;
+		}
+
+		@Override
+		protected Object clone() throws CloneNotSupportedException {
+			return super.clone();
+		}
+	}
+
+	/**
+	 * A component's temperature has exceeded its material's melting or auto-ignition limit.
+	 */
+	public static class ThermalFailure extends Warning {
+		private final RocketComponent component;
+		private final double tempK;
+		private final double limitK;
+
+		public ThermalFailure(RocketComponent component, double tempK, double limitK) {
+			this.component = component;
+			this.tempK = tempK;
+			this.limitK = limitK;
+			setPriority(MessagePriority.HIGH);
+		}
+
+		public RocketComponent getComponent() {
+			return component;
+		}
+
+		public double getTempK() {
+			return tempK;
+		}
+
+		public double getLimitK() {
+			return limitK;
+		}
+
+		@Override
+		public String getMessageDescription() {
+			return trans.get("Warning.ThermalFailure.str") + " "
+					+ component.getName()
+					+ " (" + String.format("%.0f", tempK) + " K > "
+					+ String.format("%.0f", limitK) + " K)";
+		}
+
+		@Override
+		public boolean replaceBy(Message other) {
+			return false;
+		}
+
+		@Override
+		protected Object clone() throws CloneNotSupportedException {
+			return super.clone();
+		}
+	}
+
+	/**
+	 * A bond joint between a component and its parent has failed in shear.
+	 */
+	public static class BondFailure extends Warning {
+		private final RocketComponent component;
+		private final double shearForceN;
+
+		public BondFailure(RocketComponent component, double shearForceN) {
+			this.component = component;
+			this.shearForceN = shearForceN;
+			setPriority(MessagePriority.HIGH);
+		}
+
+		public RocketComponent getComponent() {
+			return component;
+		}
+
+		public double getShearForceN() {
+			return shearForceN;
+		}
+
+		@Override
+		public String getMessageDescription() {
+			return trans.get("Warning.BondFailure.str") + " "
+					+ component.getName()
+					+ " (" + String.format("%.1f", shearForceN) + " N)";
+		}
+
+		@Override
+		public boolean replaceBy(Message other) {
+			return false;
+		}
+
+		@Override
+		protected Object clone() throws CloneNotSupportedException {
+			return super.clone();
+		}
+	}
+
+	public static class ParachuteFailure extends Warning {
+		private final RocketComponent component;
+		private final String reason;
+
+		public ParachuteFailure(RocketComponent component, String reason) {
+			this.component = component;
+			this.reason = reason;
+			setPriority(MessagePriority.HIGH);
+		}
+
+		public RocketComponent getComponent() {
+			return component;
+		}
+
+		@Override
+		public String getMessageDescription() {
+			return trans.get("Warning.ParachuteFailure.str") + " "
+					+ component.getName()
+					+ " (" + reason + ")";
+		}
+
+		@Override
+		public boolean replaceBy(Message other) {
+			return false;
+		}
+
+		@Override
+		protected Object clone() throws CloneNotSupportedException {
+			return super.clone();
+		}
+	}
 }

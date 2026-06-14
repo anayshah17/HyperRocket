@@ -315,6 +315,7 @@ public class UnitGroup {
 
 		UNITS_SHEAR_MODULUS = new UnitGroup();
 		UNITS_SHEAR_MODULUS.addUnit(new GeneralUnit(1, "Pa"));
+		UNITS_SHEAR_MODULUS.addUnit(new GeneralUnit(1.0e6, "MPa"));
 		UNITS_SHEAR_MODULUS.addUnit(new GeneralUnit(1.0e9, "GPa"));
 		UNITS_SHEAR_MODULUS.addUnit(new GeneralUnit(6.89475729e6, "ksi"));
 

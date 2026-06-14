@@ -16,9 +16,11 @@ import info.openrocket.core.logging.WarningSet;
 import info.openrocket.core.formatting.RocketDescriptor;
 import info.openrocket.core.l10n.Translator;
 import info.openrocket.core.masscalc.MassCalculator;
+import info.openrocket.core.rocketcomponent.BondJoint;
 import info.openrocket.core.rocketcomponent.FlightConfiguration;
 import info.openrocket.core.rocketcomponent.FlightConfigurationId;
 import info.openrocket.core.rocketcomponent.Rocket;
+import info.openrocket.core.rocketcomponent.RocketComponent;
 import info.openrocket.core.simulation.BasicEventSimulationEngine;
 import info.openrocket.core.simulation.DefaultSimulationOptionFactory;
 import info.openrocket.core.simulation.FlightData;
@@ -29,6 +31,14 @@ import info.openrocket.core.simulation.SimulationOptions;
 import info.openrocket.core.simulation.SimulationStepper;
 import info.openrocket.core.simulation.exception.SimulationException;
 import info.openrocket.core.simulation.extension.SimulationExtension;
+import info.openrocket.core.models.wind.MultiLevelPinkNoiseWindModel;
+import info.openrocket.core.motor.MotorConfiguration;
+import info.openrocket.core.motor.ThrustCurveMotor;
+import info.openrocket.core.simulation.listeners.MisalignmentListener;
+import info.openrocket.core.simulation.listeners.RecoveryIntegrityListener;
+import info.openrocket.core.simulation.listeners.StructuralFailureListener;
+import info.openrocket.core.simulation.listeners.ThermalSimulationListener;
+import info.openrocket.core.util.WeatherFetcher;
 import info.openrocket.core.simulation.listeners.SimulationListener;
 import info.openrocket.core.startup.Application;
 import info.openrocket.core.util.ArrayList;
@@ -496,6 +506,57 @@ public class Simulation implements ChangeSource, Cloneable {
 				extension.initialize(simulationConditions);
 			}
 			
+			// Phase 5a: replace wind model with live NOAA data when requested
+			if (options.isEnableRealWeather()) {
+				double lat = options.getLaunchLatitude();
+				double lon = options.getLaunchLongitude();
+				WeatherFetcher.WeatherData weather = WeatherFetcher.fetch(lat, lon);
+				if (weather != null) {
+					MultiLevelPinkNoiseWindModel noaaWind = new MultiLevelPinkNoiseWindModel();
+					noaaWind.clearLevels();
+					for (WeatherFetcher.WeatherLevel level : weather.windLevels) {
+						noaaWind.addWindLevel(level.altitudeAGL, level.windSpeedMps, level.windDirectionRad);
+					}
+					simulationConditions.setWindModel(noaaWind);
+					log.info("Real weather loaded: {} wind levels from NOAA", weather.windLevels.size());
+				} else {
+					log.warn("Real weather fetch failed — using configured wind model");
+				}
+			}
+
+			// Always-on failure-detection listeners
+			simulationConditions.getSimulationListenerList().add(new RecoveryIntegrityListener());
+			simulationConditions.getSimulationListenerList().add(new MisalignmentListener());
+			// Optional failure-simulation listeners (user-toggled in Simulation Options)
+			if (options.isEnableStructuralFailure()) {
+				StructuralFailureListener sfl = new StructuralFailureListener();
+				FlightConfiguration cfg = simulationConditions.getRocket().getSelectedConfiguration();
+				for (RocketComponent comp : cfg.getActiveComponents()) {
+					BondJoint joint = comp.getBondJoint();
+					if (joint.getBondArea() > 0 && joint.getShearStrength() > 0) {
+						sfl.addBondJoint(comp, joint);
+					}
+				}
+				simulationConditions.getSimulationListenerList().add(sfl);
+			}
+			if (options.isEnableThermalSimulation()) {
+				// Phase 5b: configure exhaust temp from the active motor if known
+				ThermalSimulationListener tsl = new ThermalSimulationListener();
+				FlightConfiguration cfg = simulationConditions.getRocket().getSelectedConfiguration();
+				for (MotorConfiguration mc : cfg.getActiveMotors()) {
+					if (mc.getMotor() instanceof ThrustCurveMotor) {
+						ThrustCurveMotor tcm = (ThrustCurveMotor) mc.getMotor();
+						if (tcm.getExhaustTemperatureK() > 0) {
+							tsl.setExhaustTempK(tcm.getExhaustTemperatureK());
+							log.info("Thermal listener: using motor exhaust temp {} K from {}",
+									tcm.getExhaustTemperatureK(), tcm.getDesignation());
+							break;
+						}
+					}
+				}
+				simulationConditions.getSimulationListenerList().add(tsl);
+			}
+
 			for (SimulationListener l : additionalListeners) {
 				simulationConditions.getSimulationListenerList().add(l);
 			}

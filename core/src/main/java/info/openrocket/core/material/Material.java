@@ -172,6 +172,18 @@ public abstract class Material implements Comparable<Material>, Groupable<Materi
 	private boolean userDefined;
 	private boolean documentMaterial;
 	private MaterialGroup group;
+
+	// Structural strength properties (Pa). 0.0 means not specified.
+	private double tensileStrength = 0.0;
+	private double compressiveStrength = 0.0;
+	private double shearStrength = 0.0;
+	private double yieldStrength = 0.0;
+
+	// Thermal properties. 0.0 means not specified.
+	private double meltingPoint = 0.0;       // K
+	private double autoIgnitionTemp = 0.0;   // K
+	private double thermalConductivity = 0.0; // W/(m·K)
+	private double specificHeat = 0.0;        // J/(kg·K)
 	
 	
 	/**
@@ -271,6 +283,122 @@ public abstract class Material implements Comparable<Material>, Groupable<Materi
 		return MaterialGroup.OTHER;
 	}
 
+	// ---- Structural strength getters ----
+
+	/** @return ultimate tensile strength in Pa, or 0.0 if not specified */
+	public double getTensileStrength() { return tensileStrength; }
+
+	/** @return compressive strength in Pa, or 0.0 if not specified */
+	public double getCompressiveStrength() { return compressiveStrength; }
+
+	/** @return shear strength in Pa, or 0.0 if not specified */
+	public double getShearStrength() { return shearStrength; }
+
+	/** @return yield strength in Pa, or 0.0 if not specified */
+	public double getYieldStrength() { return yieldStrength; }
+
+	// ---- Thermal property getters ----
+
+	/** @return melting point in K, or 0.0 if not specified */
+	public double getMeltingPoint() { return meltingPoint; }
+
+	/** @return auto-ignition temperature in K, or 0.0 if not specified */
+	public double getAutoIgnitionTemp() { return autoIgnitionTemp; }
+
+	/** @return thermal conductivity in W/(m·K), or 0.0 if not specified */
+	public double getThermalConductivity() { return thermalConductivity; }
+
+	/** @return specific heat capacity in J/(kg·K), or 0.0 if not specified */
+	public double getSpecificHeat() { return specificHeat; }
+
+	/**
+	 * Set structural strength properties. All values in Pa.
+	 */
+	public void setStrengthProperties(double tensile, double compressive, double shear, double yield) {
+		this.tensileStrength = tensile;
+		this.compressiveStrength = compressive;
+		this.shearStrength = shear;
+		this.yieldStrength = yield;
+	}
+
+	/**
+	 * Set thermal properties.
+	 * @param melting melting point in K
+	 * @param autoIgnition auto-ignition temperature in K
+	 * @param conductivity thermal conductivity in W/(m·K)
+	 * @param specificHeat specific heat capacity in J/(kg·K)
+	 */
+	public void setThermalProperties(double melting, double autoIgnition, double conductivity, double specificHeat) {
+		this.meltingPoint = melting;
+		this.autoIgnitionTemp = autoIgnition;
+		this.thermalConductivity = conductivity;
+		this.specificHeat = specificHeat;
+	}
+
+	// ---- Effective property getters -----------------------------------------
+	// These return the explicitly-set value when available, otherwise a
+	// representative default derived from the material group/density/name
+	// (see MaterialPhysicalDefaults).  The failure-simulation listeners use
+	// these so that stock materials, which carry no strength/thermal data,
+	// still produce meaningful results.
+
+	/** @return tensile strength (Pa); a group/density estimate if unset. */
+	public double getEffectiveTensileStrength() {
+		return tensileStrength > 0 ? tensileStrength : MaterialPhysicalDefaults.tensileStrength(this);
+	}
+
+	/** @return compressive strength (Pa); a group/density estimate if unset. */
+	public double getEffectiveCompressiveStrength() {
+		return compressiveStrength > 0 ? compressiveStrength : MaterialPhysicalDefaults.compressiveStrength(this);
+	}
+
+	/** @return shear strength (Pa); a group/density estimate if unset. */
+	public double getEffectiveShearStrength() {
+		return shearStrength > 0 ? shearStrength : MaterialPhysicalDefaults.shearStrength(this);
+	}
+
+	/** @return yield strength (Pa); a group/density estimate if unset. */
+	public double getEffectiveYieldStrength() {
+		return yieldStrength > 0 ? yieldStrength : MaterialPhysicalDefaults.yieldStrength(this);
+	}
+
+	/** @return melting point (K), or 0 for materials that char rather than melt. */
+	public double getEffectiveMeltingPoint() {
+		return meltingPoint > 0 ? meltingPoint : MaterialPhysicalDefaults.meltingPoint(this);
+	}
+
+	/** @return auto-ignition temperature (K), or 0 if melting governs. */
+	public double getEffectiveAutoIgnitionTemp() {
+		return autoIgnitionTemp > 0 ? autoIgnitionTemp : MaterialPhysicalDefaults.autoIgnitionTemp(this);
+	}
+
+	/** @return specific heat (J/kg·K); always positive. */
+	public double getEffectiveSpecificHeat() {
+		return specificHeat > 0 ? specificHeat : MaterialPhysicalDefaults.specificHeat(this);
+	}
+
+	/** @return thermal conductivity (W/m·K); always positive. */
+	public double getEffectiveThermalConductivity() {
+		return thermalConductivity > 0 ? thermalConductivity : MaterialPhysicalDefaults.thermalConductivity(this);
+	}
+
+	/**
+	 * Populate any unset strength/thermal properties with the representative
+	 * defaults for this material's group/density/name.  Already-specified
+	 * values are left untouched.  Used to enrich the built-in material
+	 * database so the values are visible in the material editor.
+	 */
+	public void applyPhysicalDefaults() {
+		if (tensileStrength <= 0)      tensileStrength = MaterialPhysicalDefaults.tensileStrength(this);
+		if (compressiveStrength <= 0)  compressiveStrength = MaterialPhysicalDefaults.compressiveStrength(this);
+		if (shearStrength <= 0)        shearStrength = MaterialPhysicalDefaults.shearStrength(this);
+		if (yieldStrength <= 0)        yieldStrength = MaterialPhysicalDefaults.yieldStrength(this);
+		if (meltingPoint <= 0)         meltingPoint = MaterialPhysicalDefaults.meltingPoint(this);
+		if (autoIgnitionTemp <= 0)     autoIgnitionTemp = MaterialPhysicalDefaults.autoIgnitionTemp(this);
+		if (specificHeat <= 0)         specificHeat = MaterialPhysicalDefaults.specificHeat(this);
+		if (thermalConductivity <= 0)  thermalConductivity = MaterialPhysicalDefaults.thermalConductivity(this);
+	}
+
 	public int getGroupPriority() {
 		if (group == null) {
 			return Integer.MAX_VALUE;
@@ -295,8 +423,17 @@ public abstract class Material implements Comparable<Material>, Groupable<Materi
 		if (this.getClass() != o.getClass())
 			return false;
 		Material m = (Material) o;
-		return ((m.name.equals(this.name)) && MathUtil.equals(m.density, this.density) 
-				&& MathUtil.equals(m.inPlaneShearModulus, this.inPlaneShearModulus)) && groupsEqual(m);
+		return ((m.name.equals(this.name)) && MathUtil.equals(m.density, this.density)
+				&& MathUtil.equals(m.inPlaneShearModulus, this.inPlaneShearModulus))
+				&& MathUtil.equals(m.tensileStrength, this.tensileStrength)
+				&& MathUtil.equals(m.compressiveStrength, this.compressiveStrength)
+				&& MathUtil.equals(m.shearStrength, this.shearStrength)
+				&& MathUtil.equals(m.yieldStrength, this.yieldStrength)
+				&& MathUtil.equals(m.meltingPoint, this.meltingPoint)
+				&& MathUtil.equals(m.autoIgnitionTemp, this.autoIgnitionTemp)
+				&& MathUtil.equals(m.thermalConductivity, this.thermalConductivity)
+				&& MathUtil.equals(m.specificHeat, this.specificHeat)
+				&& groupsEqual(m);
 	}
 
 	private boolean groupsEqual(Material m) {
@@ -390,10 +527,30 @@ public abstract class Material implements Comparable<Material>, Groupable<Materi
 		group = m.group;
 		userDefined = m.userDefined;
 		documentMaterial = m.documentMaterial;
+		tensileStrength = m.tensileStrength;
+		compressiveStrength = m.compressiveStrength;
+		shearStrength = m.shearStrength;
+		yieldStrength = m.yieldStrength;
+		meltingPoint = m.meltingPoint;
+		autoIgnitionTemp = m.autoIgnitionTemp;
+		thermalConductivity = m.thermalConductivity;
+		specificHeat = m.specificHeat;
 	}
 	
 	public String toStorableString() {
-		return getType().name() + "|" + name.replace('|', ' ') + '|' + density + '|' + inPlaneShearModulus + '|' + group.getDatabaseString();
+		String base = getType().name() + "|" + name.replace('|', ' ') + '|' + density + '|'
+				+ inPlaneShearModulus + '|' + group.getDatabaseString();
+		// Append structural/thermal properties only when any is set, so materials
+		// without them keep the original 5-field format (fully backward compatible).
+		boolean hasPhysical = tensileStrength > 0 || compressiveStrength > 0 || shearStrength > 0
+				|| yieldStrength > 0 || meltingPoint > 0 || autoIgnitionTemp > 0
+				|| thermalConductivity > 0 || specificHeat > 0;
+		if (hasPhysical) {
+			base += "|" + tensileStrength + "|" + compressiveStrength + "|" + shearStrength
+					+ "|" + yieldStrength + "|" + meltingPoint + "|" + autoIgnitionTemp
+					+ "|" + thermalConductivity + "|" + specificHeat;
+		}
+		return base;
 	}
 
 	
@@ -410,7 +567,7 @@ public abstract class Material implements Comparable<Material>, Groupable<Materi
 		if (str == null)
 			throw new IllegalArgumentException("Material string is null");
 		
-		String[] split = str.split("\\|", 5);
+		String[] split = str.split("\\|", -1);
 		if (split.length < 3)
 			throw new IllegalArgumentException("Illegal material string: " + str);
 		
@@ -434,14 +591,18 @@ public abstract class Material implements Comparable<Material>, Groupable<Materi
 			throw new IllegalArgumentException("Illegal material string: " + str, e);
 		}
 
-		// Handle backward compatibility: old format has 4 fields (type|name|density|group)
-		// new format has 5 fields (type|name|density|inPlaneShearModulus|group)
+		// Handle backward compatibility: old format has 4 fields (type|name|density|group),
+		// 5-field format adds inPlaneShearModulus, and the 13-field format appends the eight
+		// structural/thermal properties (type|name|density|shear|group|tensile|compressive|
+		// shear|yield|melting|autoIgnition|conductivity|specificHeat).
+		boolean newFormat = false;
 		if (split.length >= 4) {
 			try {
 				// Try to parse the 4th field as a double (shear modulus)
 				inPlaneShearModulus = Double.parseDouble(split[3]);
+				newFormat = true;
 				// If successful and there's a 5th field, it's the group
-				if (split.length == 5) {
+				if (split.length >= 5) {
 					try {
 						group = MaterialGroup.loadFromDatabaseStringWithBackwardCompatibility(split[4], type, name, density);
 					} catch (IllegalArgumentException e) {
@@ -458,12 +619,28 @@ public abstract class Material implements Comparable<Material>, Groupable<Materi
 			}
 		}
 
-		return switch (type) {
+		Material result = switch (type) {
 			case BULK -> new Bulk(name, density, inPlaneShearModulus, group, userDefined);
 			case SURFACE -> new Surface(name, density, inPlaneShearModulus, group, userDefined);
 			case LINE -> new Line(name, density, inPlaneShearModulus, group, userDefined);
 			default -> throw new IllegalArgumentException("Illegal material string: " + str);
 		};
+
+		// Restore appended structural/thermal properties when present.
+		if (newFormat && split.length >= 13) {
+			try {
+				result.setStrengthProperties(
+						Double.parseDouble(split[5]), Double.parseDouble(split[6]),
+						Double.parseDouble(split[7]), Double.parseDouble(split[8]));
+				result.setThermalProperties(
+						Double.parseDouble(split[9]), Double.parseDouble(split[10]),
+						Double.parseDouble(split[11]), Double.parseDouble(split[12]));
+			} catch (NumberFormatException e) {
+				log.debug("Ignoring malformed material physical properties: " + str);
+			}
+		}
+
+		return result;
 	}
 	
 }

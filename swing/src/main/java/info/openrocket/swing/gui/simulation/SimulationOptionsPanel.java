@@ -35,6 +35,8 @@ import info.openrocket.core.document.OpenRocketDocument;
 import info.openrocket.core.document.Simulation;
 import info.openrocket.core.l10n.Translator;
 import info.openrocket.core.models.gravity.GravityModelType;
+import info.openrocket.core.models.wind.WindModelType;
+import info.openrocket.core.util.WeatherFetcher;
 import info.openrocket.core.simulation.RK4SimulationStepper;
 import info.openrocket.core.simulation.SimulationOptions;
 import info.openrocket.core.simulation.extension.SimulationExtension;
@@ -375,6 +377,92 @@ class SimulationOptionsPanel extends JPanel {
 
 		options.addChangeListener(e -> SwingUtilities.invokeLater(this::updateLookupSummary));
 		updateLookupSummary();
+
+		//// Failure Simulation
+		sub = new JPanel(new MigLayout("fillx, gap rel unrel"));
+		sub.setBorder(BorderFactory.createTitledBorder(trans.get("simedtdlg.border.FailureSimulation")));
+		this.add(sub, "wmin 300lp, growx, wrap");
+
+		javax.swing.JCheckBox structuralCheck = new javax.swing.JCheckBox(
+				trans.get("simedtdlg.checkbox.EnableStructuralFailure"));
+		structuralCheck.setToolTipText(trans.get("simedtdlg.checkbox.ttip.EnableStructuralFailure"));
+		structuralCheck.setSelected(options.isEnableStructuralFailure());
+		structuralCheck.addActionListener(e -> options.setEnableStructuralFailure(structuralCheck.isSelected()));
+		options.addChangeListener(e -> structuralCheck.setSelected(options.isEnableStructuralFailure()));
+		sub.add(structuralCheck, "wrap");
+
+		javax.swing.JCheckBox thermalCheck = new javax.swing.JCheckBox(
+				trans.get("simedtdlg.checkbox.EnableThermalSimulation"));
+		thermalCheck.setToolTipText(trans.get("simedtdlg.checkbox.ttip.EnableThermalSimulation"));
+		thermalCheck.setSelected(options.isEnableThermalSimulation());
+		thermalCheck.addActionListener(e -> options.setEnableThermalSimulation(thermalCheck.isSelected()));
+		options.addChangeListener(e -> thermalCheck.setSelected(options.isEnableThermalSimulation()));
+		sub.add(thermalCheck, "wrap");
+
+		//// Real Weather
+		sub = new JPanel(new MigLayout("fillx, gap rel unrel"));
+		sub.setBorder(BorderFactory.createTitledBorder(trans.get("simedtdlg.border.RealWeather")));
+		this.add(sub, "wmin 300lp, growx, wrap");
+
+		javax.swing.JCheckBox realWeatherCheck = new javax.swing.JCheckBox(
+				trans.get("simedtdlg.checkbox.EnableRealWeather"));
+		realWeatherCheck.setToolTipText(trans.get("simedtdlg.checkbox.ttip.EnableRealWeather"));
+		realWeatherCheck.setSelected(options.isEnableRealWeather());
+		realWeatherCheck.addActionListener(e -> options.setEnableRealWeather(realWeatherCheck.isSelected()));
+		options.addChangeListener(e -> realWeatherCheck.setSelected(options.isEnableRealWeather()));
+		sub.add(realWeatherCheck, "wrap");
+
+		javax.swing.JLabel weatherNoteLabel = new javax.swing.JLabel(
+				"<html><i>" + trans.get("simedtdlg.lbl.RealWeatherNote") + "</i></html>");
+		sub.add(weatherNoteLabel, "wrap");
+
+		// "Fetch Now" — fetches live weather immediately, shows the exact numbers loaded,
+		// and falls back to a clearly-labelled offline estimate so the button always works.
+		JButton fetchNowButton = new JButton(trans.get("simedtdlg.btn.FetchWeatherNow"));
+		fetchNowButton.setToolTipText(trans.get("simedtdlg.checkbox.ttip.EnableRealWeather"));
+		javax.swing.JLabel fetchStatusLabel = new javax.swing.JLabel(" ");
+
+		fetchNowButton.addActionListener(e -> {
+			fetchNowButton.setEnabled(false);
+			fetchStatusLabel.setText(trans.get("simedtdlg.lbl.WeatherFetching"));
+			double lat = options.getLaunchLatitude();
+			double lon = options.getLaunchLongitude();
+
+			new javax.swing.SwingWorker<WeatherFetcher.WeatherData, Void>() {
+				@Override
+				protected WeatherFetcher.WeatherData doInBackground() {
+					WeatherFetcher.WeatherData w = WeatherFetcher.fetch(lat, lon);
+					return (w != null && !w.windLevels.isEmpty())
+							? w : WeatherFetcher.syntheticFallback(lat, lon);
+				}
+
+				@Override
+				protected void done() {
+					try {
+						WeatherFetcher.WeatherData weather = get();
+						info.openrocket.core.models.wind.MultiLevelPinkNoiseWindModel model =
+								options.getMultiLevelWindModel();
+						model.clearLevels();
+						for (WeatherFetcher.WeatherLevel level : weather.windLevels) {
+							model.addWindLevel(level.altitudeAGL, level.windSpeedMps,
+									level.windDirectionRad);
+						}
+						options.setWindModelType(WindModelType.MULTI_LEVEL);
+						String prefix = weather.live ? "✓ " : "⚠ ";
+						fetchStatusLabel.setText("<html>" + prefix
+								+ escapeHtml(String.format("(%.4f, %.4f)  ", lat, lon))
+								+ escapeHtml(weather.describe()) + "</html>");
+					} catch (Exception ex) {
+						fetchStatusLabel.setText(trans.get("simedtdlg.lbl.WeatherFailed")
+								+ " (" + ex.getMessage() + ")");
+					}
+					fetchNowButton.setEnabled(true);
+				}
+			}.execute();
+		});
+
+		sub.add(fetchNowButton, "split 2");
+		sub.add(fetchStatusLabel, "growx, wrap");
 
 	}
 

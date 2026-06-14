@@ -104,6 +104,13 @@ public class SimulationOptions implements ChangeSource, Cloneable, SimulationOpt
 
 	private SimulationStepperMethod stepperMethodChoice = SimulationStepperMethod.RK4;
 
+	/** Failure simulation toggles — default off so existing simulations are unaffected. */
+	private boolean enableStructuralFailure = false;
+	private boolean enableThermalSimulation = false;
+
+	/** When true, replace the configured wind model with live NOAA weather data before each simulation. */
+	private boolean enableRealWeather = false;
+
 	private Path dragLookupCsvPath;
 	private Path stabilityLookupCsvPath;
 	private MachAoALookup dragLookupTable;
@@ -572,6 +579,36 @@ public class SimulationOptions implements ChangeSource, Cloneable, SimulationOpt
 		// fireChangeEvent();
 	}
 
+	public boolean isEnableStructuralFailure() {
+		return enableStructuralFailure;
+	}
+
+	public void setEnableStructuralFailure(boolean enable) {
+		if (this.enableStructuralFailure == enable) return;
+		this.enableStructuralFailure = enable;
+		fireChangeEvent();
+	}
+
+	public boolean isEnableThermalSimulation() {
+		return enableThermalSimulation;
+	}
+
+	public void setEnableThermalSimulation(boolean enable) {
+		if (this.enableThermalSimulation == enable) return;
+		this.enableThermalSimulation = enable;
+		fireChangeEvent();
+	}
+
+	public boolean isEnableRealWeather() {
+		return enableRealWeather;
+	}
+
+	public void setEnableRealWeather(boolean enable) {
+		if (this.enableRealWeather == enable) return;
+		this.enableRealWeather = enable;
+		fireChangeEvent();
+	}
+
 	@Override
 	public SimulationOptions clone() {
 		try {
@@ -704,6 +741,19 @@ public class SimulationOptions implements ChangeSource, Cloneable, SimulationOpt
 			this.stabilityLookupTable = src.stabilityLookupTable;
 		}
 
+		if (this.enableStructuralFailure != src.enableStructuralFailure) {
+			isChanged = true;
+			this.enableStructuralFailure = src.enableStructuralFailure;
+		}
+		if (this.enableThermalSimulation != src.enableThermalSimulation) {
+			isChanged = true;
+			this.enableThermalSimulation = src.enableThermalSimulation;
+		}
+		if (this.enableRealWeather != src.enableRealWeather) {
+			isChanged = true;
+			this.enableRealWeather = src.enableRealWeather;
+		}
+
 		if (isChanged) {
 			// Only copy the randomSeed if something else has changed.
 			// Honestly, I don't really see a need for that.
@@ -739,7 +789,10 @@ public class SimulationOptions implements ChangeSource, Cloneable, SimulationOpt
 				this.averageWindModel.equals(o.averageWindModel) &&
 				this.multiLevelPinkNoiseWindModel.equals(o.multiLevelPinkNoiseWindModel) &&
 				this.gravityModelType == o.gravityModelType &&
-				MathUtil.equals(this.constantGravity, o.constantGravity);
+				MathUtil.equals(this.constantGravity, o.constantGravity) &&
+				this.enableStructuralFailure == o.enableStructuralFailure &&
+				this.enableThermalSimulation == o.enableThermalSimulation &&
+				this.enableRealWeather == o.enableRealWeather;
 	}
 
 	/**

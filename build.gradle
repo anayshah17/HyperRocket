@@ -132,6 +132,10 @@ subprojects {
     apply plugin: 'jacoco'
     apply plugin: 'com.github.spotbugs'
 
+    tasks.withType(JavaCompile).configureEach {
+        options.encoding = 'UTF-8'
+    }
+
     // Configure the gradle-modules-plugin
     modularity {
         standardJavaRelease(17) // For targeting Java 17

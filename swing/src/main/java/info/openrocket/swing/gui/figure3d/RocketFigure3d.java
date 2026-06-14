@@ -202,13 +202,10 @@ public class RocketFigure3d extends JPanel implements GLEventListener {
 				log.trace("GL - Not enabling AA by user pref");
 			}
 			
-			if (Application.getPreferences().getBoolean(ApplicationPreferences.OPENGL_USE_FBO, false)) {
-				log.trace("GL - Creating GLJPanel");
-				canvas = new GLJPanel(caps);
-			} else {
-				log.trace("GL - Creating GLCanvas");
-				canvas = new GLCanvas(caps);
-			}
+			// Always use GLJPanel — GLCanvas (heavyweight AWT) fails on Windows when added
+			// to a Swing hierarchy without a live native window handle (handle 0x0).
+			log.trace("GL - Creating GLJPanel");
+			canvas = new GLJPanel(caps);
 			
 			log.trace("GL - Registering as GLEventListener on canvas");
 			((GLAutoDrawable) canvas).addGLEventListener(this);

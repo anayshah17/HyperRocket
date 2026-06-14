@@ -146,6 +146,16 @@ public class Databases {
 		LINE_MATERIAL.add(newMaterial(Type.LINE, "Elastic braided cord (flat 13 mm, 1/2 in)", 0.00551172, MaterialGroup.ELASTICS));
 
 
+		// Enrich the built-in bulk materials with representative structural and
+		// thermal properties (tensile/compressive/shear/yield strength, melting
+		// point, auto-ignition, conductivity, specific heat) derived from each
+		// material's group, density and name.  This makes the structural- and
+		// thermal-failure simulation features work out of the box and exposes the
+		// values in the material editor.  Explicitly-set values are preserved.
+		for (Material m : BULK_MATERIAL) {
+			m.applyPhysicalDefaults();
+		}
+
 		// Add user-defined materials
 		for (Material m : Application.getPreferences().getUserMaterials()) {
 			switch (m.getType()) {

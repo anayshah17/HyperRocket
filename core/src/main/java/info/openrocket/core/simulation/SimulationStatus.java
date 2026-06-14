@@ -652,6 +652,11 @@ public class SimulationStatus implements Cloneable, Monitorable {
 
 		flightDataBranch.setValue(FlightDataType.TYPE_ORIENTATION_THETA, theta);
 		flightDataBranch.setValue(FlightDataType.TYPE_ORIENTATION_PHI, phi);
+		Quaternion q = getRocketOrientationQuaternion();
+		flightDataBranch.setValue(FlightDataType.TYPE_ORIENTATION_QW, q.getW());
+		flightDataBranch.setValue(FlightDataType.TYPE_ORIENTATION_QX, q.getX());
+		flightDataBranch.setValue(FlightDataType.TYPE_ORIENTATION_QY, q.getY());
+		flightDataBranch.setValue(FlightDataType.TYPE_ORIENTATION_QZ, q.getZ());
 		flightDataBranch.setValue(FlightDataType.TYPE_COMPUTATION_TIME,
 				(System.nanoTime() - getSimulationStartWallTime()) / 1000000000.0);
 	}		
