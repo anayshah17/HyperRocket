@@ -17,6 +17,7 @@ import info.openrocket.core.file.GeneralRocketLoader;
 import info.openrocket.core.file.GeneralRocketSaver;
 import info.openrocket.core.rocketcomponent.AxialStage;
 import info.openrocket.core.rocketcomponent.BodyTube;
+import info.openrocket.core.rocketcomponent.BondJoint;
 import info.openrocket.core.rocketcomponent.Rocket;
 import info.openrocket.core.util.BaseTestCase;
 
@@ -105,5 +106,44 @@ public class MaterialPersistenceTest extends BaseTestCase {
         assertEquals(750.0, m.getMeltingPoint(), 1e-6, "melting not persisted");
         assertEquals(0.3, m.getThermalConductivity(), 1e-6, "conductivity not persisted");
         assertEquals(1234.0, m.getSpecificHeat(), 1e-6, "specific heat not persisted");
+    }
+
+    @Test
+    public void testBondJointSurvivesOrkRoundTrip() throws Exception {
+        Rocket rocket = new Rocket();
+        AxialStage stage = new AxialStage();
+        rocket.addChild(stage);
+        BodyTube tube = new BodyTube();
+        stage.addChild(tube);
+
+        tube.setBondJoint(new BondJoint(BondJoint.BondType.SCREWS, 3.2e-4, 55e6, 0.65, 420.0));
+
+        OpenRocketDocument doc = OpenRocketDocumentFactory.createDocumentFromRocket(rocket);
+        StorageOptions options = new StorageOptions();
+        options.setSaveSimulationData(false);
+
+        File orkFile = tempDir.resolve("bondjoint_round_trip.ork").toFile();
+        new GeneralRocketSaver().save(orkFile, doc, options);
+
+        OpenRocketDocument loaded = new GeneralRocketLoader(orkFile).load();
+        BodyTube loadedTube = (BodyTube) loaded.getRocket().getStage(0).getChild(0);
+        BondJoint joint = loadedTube.getBondJoint();
+
+        assertEquals(BondJoint.BondType.SCREWS, joint.getType(), "type not persisted");
+        assertEquals(3.2e-4, joint.getBondArea(), 1e-12, "area not persisted");
+        assertEquals(55e6, joint.getShearStrength(), 1.0, "shear strength not persisted");
+        assertEquals(0.65, joint.getQualityFactor(), 1e-6, "quality not persisted");
+        assertEquals(420.0, joint.getTemperatureLimit(), 1e-6, "temperature limit not persisted");
+    }
+
+    @Test
+    public void testDefaultBondJointStaysCompact() {
+        // A fresh component carries the default joint; it must not be written to XML.
+        BodyTube tube = new BodyTube();
+        BondJoint def = tube.getBondJoint();
+        assertEquals(BondJoint.BondType.EPOXY, def.getType());
+        assertEquals(0.0, def.getBondArea(), 1e-12);
+        assertEquals(0.0, def.getShearStrength(), 1e-12);
+        assertEquals(0.8, def.getQualityFactor(), 1e-6);
     }
 }

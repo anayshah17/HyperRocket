@@ -16,6 +16,7 @@ import info.openrocket.core.motor.Motor;
 import info.openrocket.core.motor.MotorConfiguration;
 import info.openrocket.core.motor.ThrustCurveMotor;
 import info.openrocket.core.preset.ComponentPreset;
+import info.openrocket.core.rocketcomponent.BondJoint;
 import info.openrocket.core.rocketcomponent.Clusterable;
 import info.openrocket.core.rocketcomponent.ComponentAssembly;
 import info.openrocket.core.rocketcomponent.FinSet;
@@ -161,8 +162,18 @@ public class RocketComponentSaver {
 			elements.add("<overridesubcomponentscd>" + c.isSubcomponentsOverriddenCD()
 					+ "</overridesubcomponentscd>");
 		}
-		
-		
+
+		// Bond joint (only persisted when the user has changed it from the default)
+		BondJoint joint = c.getBondJoint();
+		if (joint != null && isBondJointNonDefault(joint)) {
+			elements.add("<bondjoint type=\"" + joint.getType().name().toLowerCase(Locale.ENGLISH) + "\""
+					+ " area=\"" + joint.getBondArea() + "\""
+					+ " shearstrength=\"" + joint.getShearStrength() + "\""
+					+ " quality=\"" + joint.getQualityFactor() + "\""
+					+ " templimit=\"" + joint.getTemperatureLimit() + "\"/>");
+		}
+
+
 		// Comment
 		if (c.getComment().length() > 0) {
 			elements.add("<comment>" + TextUtil.escapeXML(c.getComment()) + "</comment>");
@@ -245,6 +256,19 @@ public class RocketComponentSaver {
 	/** Renders a {@code name="value"} XML attribute fragment, or "" when value &le; 0. */
 	private static String optionalAttr(String name, double value) {
 		return value > 0 ? " " + name + "=\"" + value + "\"" : "";
+	}
+
+	/**
+	 * Returns true when the bond joint differs from the constructor default
+	 * ({@code EPOXY}, zero area/strength/temperature, quality 0.8).  Default joints
+	 * are reconstructed automatically, so writing them would bloat every component.
+	 */
+	private static boolean isBondJointNonDefault(BondJoint joint) {
+		return joint.getType() != BondJoint.BondType.EPOXY
+				|| joint.getBondArea() != 0.0
+				|| joint.getShearStrength() != 0.0
+				|| joint.getTemperatureLimit() != 0.0
+				|| joint.getQualityFactor() != 0.8;
 	}
 	
 	

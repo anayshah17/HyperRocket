@@ -148,7 +148,8 @@ class DocumentConfig {
 				Reflection.findMethod(RocketComponent.class, "setComment", String.class)));
 		setters.put("RocketComponent:preset", new ComponentPresetSetter(
 				Reflection.findMethod(RocketComponent.class, "loadPreset", ComponentPreset.class)));
-		
+		setters.put("RocketComponent:bondjoint", new BondJointSetter());
+
 
 		// ExternalComponent
 		setters.put("ExternalComponent:finish", new EnumSetter<>(
