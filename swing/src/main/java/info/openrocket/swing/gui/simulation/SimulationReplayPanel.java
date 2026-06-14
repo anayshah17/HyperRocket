@@ -14,6 +14,8 @@ import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.event.MouseWheelEvent;
 import java.awt.event.MouseWheelListener;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -90,9 +92,16 @@ public class SimulationReplayPanel extends JPanel implements GLEventListener {
     private static final String[] SPEED_LABELS = { "0.1×", "0.25×", "0.5×", "1×", "2×", "5×", "10×" };
     private static final int DEFAULT_SPEED_IDX = 3; // 1×
 
-    // Sky / atmosphere colours (warm desert sky).
-    private static final float[] SKY_ZENITH = { 0.30f, 0.52f, 0.85f };   // blue overhead
-    private static final float[] SKY_HORIZON = { 0.82f, 0.79f, 0.70f };  // warm sandy haze
+    // Sky / atmosphere colours (clear-day desert sky).  The horizon colour also
+    // drives the distance fog and GL clear colour, so it must read as pale
+    // atmospheric haze — not sand — or the whole scene tints alien.
+    private static final float[] SKY_ZENITH = { 0.17f, 0.38f, 0.74f };   // deep blue overhead
+    private static final float[] SKY_MID = { 0.42f, 0.60f, 0.83f };      // mid-sky blue
+    private static final float[] SKY_HORIZON = { 0.80f, 0.86f, 0.89f };  // pale blue-white haze
+
+    // Directional sun (w=0).  A mid-height angle gives dunes definition without
+    // throwing the whole field into shadow.
+    private static final float[] SUN_DIRECTION = { 0.55f, 1.3f, 0.85f, 0f };
 
     private final OpenRocketDocument document;
     private final Simulation simulation;
@@ -138,6 +147,10 @@ public class SimulationReplayPanel extends JPanel implements GLEventListener {
     // Locally-generated desert ground (never null after loadFlightData).
     private TerrainFetcher.TerrainData terrain;
     private double terrainHalfExtent = 2000.0;
+    /** Compiled GL display list for the static terrain mesh (0 = not yet built). */
+    private int terrainListId = 0;
+    /** Procedural sand texture name modulated over the terrain (0 = not yet built). */
+    private int sandTextureId = 0;
 
     // Stats side-panel references (updated each frame)
     private MiniRocketView miniRocketView;
@@ -324,7 +337,8 @@ public class SimulationReplayPanel extends JPanel implements GLEventListener {
 
         // Generate the local high-res desert ground sized to the flight.
         terrainHalfExtent = Math.max(800.0, Math.max(maxAltitude * 1.3, maxHoriz * 1.6));
-        terrain = TerrainFetcher.generateDesert(terrainHalfExtent, 160, 1337L);
+        terrain = TerrainFetcher.generateDesert(terrainHalfExtent, 512, 1337L);
+        terrainListId = 0; // force the GL display list to rebuild for the new mesh
 
         prepareStageRendering();
         collectEvents();
@@ -682,10 +696,20 @@ public class SimulationReplayPanel extends JPanel implements GLEventListener {
 
         gl.glEnable(GL2.GL_LIGHTING);
         gl.glEnable(GL2.GL_LIGHT0);
-        gl.glLightfv(GL2.GL_LIGHT0, GL2.GL_POSITION, new float[]{ 0.6f, 2.5f, 1f, 0f }, 0);
-        gl.glLightfv(GL2.GL_LIGHT0, GL2.GL_DIFFUSE,  new float[]{ 0.9f, 0.87f, 0.78f, 1f }, 0);
-        gl.glLightfv(GL2.GL_LIGHT0, GL2.GL_AMBIENT,  new float[]{ 0.38f, 0.37f, 0.36f, 1f }, 0);
-        gl.glLightfv(GL2.GL_LIGHT0, GL2.GL_SPECULAR, new float[]{ 0.3f, 0.3f, 0.3f, 1f }, 0);
+        // A near-neutral sun with a cool, sky-tinted ambient fill.  The cool fill
+        // is what stops the warm sand from reading as molten orange: shadows pick
+        // up a little blue, exactly as they do outdoors under a real sky.
+        gl.glLightfv(GL2.GL_LIGHT0, GL2.GL_POSITION, SUN_DIRECTION, 0);
+        gl.glLightfv(GL2.GL_LIGHT0, GL2.GL_DIFFUSE,  new float[]{ 0.92f, 0.90f, 0.85f, 1f }, 0);
+        gl.glLightfv(GL2.GL_LIGHT0, GL2.GL_AMBIENT,  new float[]{ 0.34f, 0.37f, 0.42f, 1f }, 0);
+        gl.glLightfv(GL2.GL_LIGHT0, GL2.GL_SPECULAR, new float[]{ 0.25f, 0.25f, 0.23f, 1f }, 0);
+
+        // Add the specular highlight AFTER texturing, so the sand texture doesn't
+        // dull the sun glint on dune crests.
+        gl.glLightModeli(GL2.GL_LIGHT_MODEL_COLOR_CONTROL, GL2.GL_SEPARATE_SPECULAR_COLOR);
+
+        // Build the procedural sand texture once.
+        sandTextureId = createSandTexture(gl);
 
         try {
             renderer = new RealisticRenderer(document);
@@ -751,7 +775,10 @@ public class SimulationReplayPanel extends JPanel implements GLEventListener {
         double eyeZ = tz + camDist * cy * cp;
         glu.gluLookAt(eyeX, eyeY, eyeZ, tx, ty, tz, 0, 1, 0);
 
-        gl.glLightfv(GL2.GL_LIGHT0, GL2.GL_POSITION, new float[]{ 0.6f, 2.5f, 1f, 0f }, 0);
+        gl.glLightfv(GL2.GL_LIGHT0, GL2.GL_POSITION, SUN_DIRECTION, 0);
+
+        // The sun disc + glow, billboarded in the sky toward the light direction.
+        drawSun(gl, eyeX, eyeY, eyeZ, tx, ty, tz, far);
 
         // Distance fog blends the desert edge into the horizon haze.
         gl.glFogf(GL2.GL_FOG_START, (float) (terrainHalfExtent * 0.45));
@@ -781,6 +808,15 @@ public class SimulationReplayPanel extends JPanel implements GLEventListener {
 
     @Override
     public void dispose(GLAutoDrawable drawable) {
+        GL2 gl = drawable.getGL().getGL2();
+        if (terrainListId != 0) {
+            gl.glDeleteLists(terrainListId, 1);
+            terrainListId = 0;
+        }
+        if (sandTextureId != 0) {
+            gl.glDeleteTextures(1, new int[]{ sandTextureId }, 0);
+            sandTextureId = 0;
+        }
         if (renderer != null) {
             renderer.dispose(drawable);
         }
@@ -807,7 +843,11 @@ public class SimulationReplayPanel extends JPanel implements GLEventListener {
 
         gl.glScaled(1.0, 1.0, -1.0);
         gl.glFrontFace(GL.GL_CW);
-        gl.glTranslated(-rocketLength / 2.0, 0, 0);
+        // Anchor the rocket by its aft end (tail) on the tracked point rather than
+        // its centre.  The model runs nose(X=0)→tail(X=+L) and local +X maps to the
+        // "down" direction at launch, so the tail sits at the trajectory point and
+        // the rocket stands on the pad instead of being buried half-deep at lift-off.
+        gl.glTranslated(-rocketLength, 0, 0);
 
         boolean drawn = false;
         if (rendererReady && renderConfig != null && canToggleStages) {
@@ -987,10 +1027,22 @@ public class SimulationReplayPanel extends JPanel implements GLEventListener {
         gl.glDisable(GL2.GL_LIGHTING);
         gl.glDisable(GL.GL_DEPTH_TEST);
 
+        // Three-stop gradient: pale haze at the horizon, mid-blue, deep blue zenith.
+        // The non-linear split (horizon band kept thin) mimics real atmospheric
+        // scattering, which compresses the bright haze close to the horizon.
+        final float midStop = 0.32f;
         gl.glBegin(GL2.GL_QUADS);
+        // Horizon → mid
         gl.glColor3f(SKY_HORIZON[0], SKY_HORIZON[1], SKY_HORIZON[2]);
         gl.glVertex2f(0f, 0f);
         gl.glVertex2f(1f, 0f);
+        gl.glColor3f(SKY_MID[0], SKY_MID[1], SKY_MID[2]);
+        gl.glVertex2f(1f, midStop);
+        gl.glVertex2f(0f, midStop);
+        // Mid → zenith
+        gl.glColor3f(SKY_MID[0], SKY_MID[1], SKY_MID[2]);
+        gl.glVertex2f(0f, midStop);
+        gl.glVertex2f(1f, midStop);
         gl.glColor3f(SKY_ZENITH[0], SKY_ZENITH[1], SKY_ZENITH[2]);
         gl.glVertex2f(1f, 1f);
         gl.glVertex2f(0f, 1f);
@@ -1005,6 +1057,166 @@ public class SimulationReplayPanel extends JPanel implements GLEventListener {
         gl.glPopMatrix();
     }
 
+    /**
+     * Draws the sun as a billboarded bright disc with a soft additive glow, placed
+     * far away in the {@link #SUN_DIRECTION}.  Drawn after the sky but before the
+     * terrain, with depth writes off, so dunes naturally occlude it near the horizon.
+     */
+    private void drawSun(GL2 gl, double ex, double ey, double ez,
+                         double tx, double ty, double tz, double far) {
+        // Normalised sun direction.
+        double sl = Math.sqrt(SUN_DIRECTION[0] * SUN_DIRECTION[0]
+                + SUN_DIRECTION[1] * SUN_DIRECTION[1] + SUN_DIRECTION[2] * SUN_DIRECTION[2]);
+        double sdx = SUN_DIRECTION[0] / sl, sdy = SUN_DIRECTION[1] / sl, sdz = SUN_DIRECTION[2] / sl;
+
+        double dist = far * 0.82;
+        double sx = ex + sdx * dist, sy = ey + sdy * dist, sz = ez + sdz * dist;
+
+        // Camera-facing billboard basis.
+        double fx = tx - ex, fy = ty - ey, fz = tz - ez;
+        double fl = Math.sqrt(fx * fx + fy * fy + fz * fz);
+        if (fl < 1e-9) return;
+        fx /= fl; fy /= fl; fz /= fl;
+        // right = forward × worldUp
+        double rx = fy * 0 - fz * 1, ry = fz * 0 - fx * 0, rz = fx * 1 - fy * 0;
+        double rl = Math.sqrt(rx * rx + ry * ry + rz * rz);
+        if (rl < 1e-9) return;
+        rx /= rl; ry /= rl; rz /= rl;
+        // up = right × forward
+        double ux = ry * fz - rz * fy, uy = rz * fx - rx * fz, uz = rx * fy - ry * fx;
+
+        double core = dist * 0.018;
+        double glow = core * 4.5;
+
+        gl.glDisable(GL2.GL_LIGHTING);
+        gl.glDisable(GL.GL_DEPTH_TEST);
+        gl.glDepthMask(false);
+        gl.glEnable(GL.GL_BLEND);
+        gl.glBlendFunc(GL.GL_SRC_ALPHA, GL.GL_ONE); // additive
+
+        // Soft halo.
+        gl.glBegin(GL2.GL_TRIANGLE_FAN);
+        gl.glColor4f(1.0f, 0.95f, 0.82f, 0.55f);
+        gl.glVertex3d(sx, sy, sz);
+        gl.glColor4f(1.0f, 0.93f, 0.78f, 0.0f);
+        for (int i = 0; i <= 32; i++) {
+            double a = 2 * Math.PI * i / 32;
+            double ca = Math.cos(a) * glow, sa = Math.sin(a) * glow;
+            gl.glVertex3d(sx + rx * ca + ux * sa, sy + ry * ca + uy * sa, sz + rz * ca + uz * sa);
+        }
+        gl.glEnd();
+
+        // Bright core.
+        gl.glBegin(GL2.GL_TRIANGLE_FAN);
+        gl.glColor4f(1.0f, 0.98f, 0.92f, 1.0f);
+        gl.glVertex3d(sx, sy, sz);
+        gl.glColor4f(1.0f, 0.96f, 0.86f, 0.6f);
+        for (int i = 0; i <= 28; i++) {
+            double a = 2 * Math.PI * i / 28;
+            double ca = Math.cos(a) * core, sa = Math.sin(a) * core;
+            gl.glVertex3d(sx + rx * ca + ux * sa, sy + ry * ca + uy * sa, sz + rz * ca + uz * sa);
+        }
+        gl.glEnd();
+
+        gl.glDisable(GL.GL_BLEND);
+        gl.glDepthMask(true);
+        gl.glEnable(GL.GL_DEPTH_TEST);
+        gl.glEnable(GL2.GL_LIGHTING);
+    }
+
+    /**
+     * Builds a small procedural sand texture (grain + faint wind ripples + slow
+     * blotches) and uploads it as a mip-mapped, repeating 2D texture.  Centred near
+     * white so it modulates the lit vertex colours rather than darkening them.
+     *
+     * @return the GL texture name, or 0 on failure
+     */
+    private int createSandTexture(GL2 gl) {
+        final int s = 256;
+        byte[] level0 = new byte[s * s * 4];
+        java.util.Random rnd = new java.util.Random(20240611L);
+
+        int p = 0;
+        for (int y = 0; y < s; y++) {
+            for (int x = 0; x < s; x++) {
+                double g = 0.92;
+                // Fine per-grain noise.
+                g += (rnd.nextDouble() - 0.5) * 0.11;
+                // Occasional darker/lighter grains.
+                double sp = rnd.nextDouble();
+                if (sp < 0.05) g -= 0.13;
+                else if (sp > 0.97) g += 0.08;
+                // Faint wind ripples (wavy, low-contrast).
+                g += 0.035 * Math.sin(x * (2 * Math.PI / s) * 9 + 0.7 * Math.sin(y * (2 * Math.PI / s) * 3));
+                // Slow large-scale blotches to hide tiling.
+                g += 0.04 * Math.sin(x * 0.06 + 1.3) * Math.cos(y * 0.05 + 0.7);
+
+                g = Math.max(0.0, Math.min(1.0, g));
+                // Slight warm tint (more red than blue).
+                level0[p++] = (byte) clamp255(g * 1.00);
+                level0[p++] = (byte) clamp255(g * 0.97);
+                level0[p++] = (byte) clamp255(g * 0.88);
+                level0[p++] = (byte) 255;
+            }
+        }
+
+        int[] ids = new int[1];
+        gl.glGenTextures(1, ids, 0);
+        int id = ids[0];
+        gl.glBindTexture(GL.GL_TEXTURE_2D, id);
+        gl.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_WRAP_S, GL.GL_REPEAT);
+        gl.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_WRAP_T, GL.GL_REPEAT);
+        gl.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MIN_FILTER, GL.GL_LINEAR_MIPMAP_LINEAR);
+        gl.glTexParameteri(GL.GL_TEXTURE_2D, GL.GL_TEXTURE_MAG_FILTER, GL.GL_LINEAR);
+
+        // Upload the full mip chain ourselves.  JOGL 2.6 dropped GLU's
+        // gluBuild2DMipmaps ("not implemented"), so box-filter each level down.
+        byte[] data = level0;
+        int w = s, h = s, level = 0;
+        while (true) {
+            ByteBuffer bb = ByteBuffer.allocateDirect(data.length).order(ByteOrder.nativeOrder());
+            bb.put(data).rewind();
+            gl.glTexImage2D(GL.GL_TEXTURE_2D, level, GL.GL_RGBA, w, h, 0,
+                    GL.GL_RGBA, GL.GL_UNSIGNED_BYTE, bb);
+            if (w == 1 && h == 1) {
+                break;
+            }
+            data = downsampleRGBA(data, w, h);
+            w = Math.max(1, w / 2);
+            h = Math.max(1, h / 2);
+            level++;
+        }
+        return id;
+    }
+
+    /** Box-filters an RGBA byte image down to half size (min 1 px per axis). */
+    private static byte[] downsampleRGBA(byte[] src, int w, int h) {
+        int nw = Math.max(1, w / 2);
+        int nh = Math.max(1, h / 2);
+        byte[] dst = new byte[nw * nh * 4];
+        for (int y = 0; y < nh; y++) {
+            int y0 = Math.min(y * 2, h - 1);
+            int y1 = Math.min(y0 + 1, h - 1);
+            for (int x = 0; x < nw; x++) {
+                int x0 = Math.min(x * 2, w - 1);
+                int x1 = Math.min(x0 + 1, w - 1);
+                for (int ch = 0; ch < 4; ch++) {
+                    int a = src[(y0 * w + x0) * 4 + ch] & 0xFF;
+                    int b = src[(y0 * w + x1) * 4 + ch] & 0xFF;
+                    int c = src[(y1 * w + x0) * 4 + ch] & 0xFF;
+                    int d = src[(y1 * w + x1) * 4 + ch] & 0xFF;
+                    dst[(y * nw + x) * 4 + ch] = (byte) ((a + b + c + d) >> 2);
+                }
+            }
+        }
+        return dst;
+    }
+
+    private static int clamp255(double v) {
+        int i = (int) Math.round(v * 255.0);
+        return i < 0 ? 0 : (i > 255 ? 255 : i);
+    }
+
     private void drawGround(GL2 gl) {
         gl.glDisable(GL.GL_CULL_FACE);
 
@@ -1012,7 +1224,7 @@ public class SimulationReplayPanel extends JPanel implements GLEventListener {
         double baseline = (terrain != null) ? (terrain.minElevation - terrain.centerElevation) - 0.5 : 0.0;
         double half = terrainHalfExtent * 3.0;
         gl.glDisable(GL2.GL_LIGHTING);
-        gl.glColor3f(0.80f, 0.67f, 0.44f);
+        gl.glColor3f(0.72f, 0.66f, 0.50f);
         gl.glBegin(GL2.GL_QUADS);
         gl.glVertex3d(-half, baseline, -half);
         gl.glVertex3d( half, baseline, -half);
@@ -1021,26 +1233,103 @@ public class SimulationReplayPanel extends JPanel implements GLEventListener {
         gl.glEnd();
         gl.glEnable(GL2.GL_LIGHTING);
 
-        // The detailed dune mesh on top.
+        // The detailed dune mesh on top.  It is static, so compile it into a GL
+        // display list once and replay that each frame — this keeps the high-res
+        // mesh cheap to draw instead of re-emitting ~390k vertices per frame.
         if (terrain != null) {
-            TerrainRenderer.render(gl, terrain, true);
+            if (terrainListId == 0) {
+                terrainListId = gl.glGenLists(1);
+                gl.glNewList(terrainListId, GL2.GL_COMPILE);
+                TerrainRenderer.render(gl, terrain, true, sandTextureId);
+                gl.glEndList();
+            }
+            gl.glCallList(terrainListId);
         }
 
-        // Launch-pad marker
-        gl.glDisable(GL2.GL_LIGHTING);
-        gl.glColor3f(0.15f, 0.15f, 0.15f);
-        gl.glLineWidth(2.0f);
-        gl.glBegin(GL2.GL_LINE_LOOP);
-        double pad = Math.max(2.0, rocketLength);
-        for (int i = 0; i < 24; i++) {
-            double a = 2 * Math.PI * i / 24;
-            gl.glVertex3d(pad * Math.cos(a), 0.1, pad * Math.sin(a));
+        // The launch site (concrete pad + rail) at the origin.
+        drawLaunchSite(gl);
+
+        gl.glEnable(GL.GL_CULL_FACE);
+    }
+
+    /**
+     * Draws a small launch site at the origin: a slightly raised concrete pad with
+     * a darker rim, and a thin metal launch rail standing beside the rocket.
+     */
+    private void drawLaunchSite(GL2 gl) {
+        final double padR = Math.max(2.5, rocketLength * 2.2);
+        final int seg = 48;
+
+        gl.glEnable(GL2.GL_COLOR_MATERIAL);
+        gl.glColorMaterial(GL.GL_FRONT_AND_BACK, GL2.GL_AMBIENT_AND_DIFFUSE);
+        gl.glNormal3d(0, 1, 0);
+
+        // Concrete slab, a touch proud of the sand.
+        gl.glColor3f(0.60f, 0.59f, 0.57f);
+        gl.glBegin(GL2.GL_TRIANGLE_FAN);
+        gl.glVertex3d(0, 0.08, 0);
+        for (int i = 0; i <= seg; i++) {
+            double a = 2 * Math.PI * i / seg;
+            gl.glVertex3d(padR * Math.cos(a), 0.08, padR * Math.sin(a));
         }
+        gl.glEnd();
+
+        // Darker rim ring.
+        gl.glColor3f(0.40f, 0.39f, 0.38f);
+        gl.glBegin(GL2.GL_QUAD_STRIP);
+        for (int i = 0; i <= seg; i++) {
+            double a = 2 * Math.PI * i / seg;
+            double ca = Math.cos(a), sa = Math.sin(a);
+            gl.glVertex3d(padR * ca, 0.09, padR * sa);
+            gl.glVertex3d(padR * 1.12 * ca, 0.04, padR * 1.12 * sa);
+        }
+        gl.glEnd();
+
+        // Painted hazard square outline on the slab.
+        gl.glDisable(GL2.GL_LIGHTING);
+        gl.glColor3f(0.85f, 0.78f, 0.30f);
+        gl.glLineWidth(2.0f);
+        double q = padR * 0.5;
+        gl.glBegin(GL2.GL_LINE_LOOP);
+        gl.glVertex3d(-q, 0.10, -q);
+        gl.glVertex3d( q, 0.10, -q);
+        gl.glVertex3d( q, 0.10,  q);
+        gl.glVertex3d(-q, 0.10,  q);
         gl.glEnd();
         gl.glLineWidth(1.0f);
         gl.glEnable(GL2.GL_LIGHTING);
 
-        gl.glEnable(GL.GL_CULL_FACE);
+        // A thin metal launch rail standing beside the pad centre.
+        double railH = Math.max(1.2, rocketLength * 1.35);
+        double railW = Math.max(0.02, padR * 0.025);
+        double railX = padR * 0.18;
+        gl.glColor3f(0.72f, 0.74f, 0.77f);
+        drawBox(gl, railX, 0.0, railW, railH);
+
+        gl.glDisable(GL2.GL_COLOR_MATERIAL);
+    }
+
+    /** Draws an axis-aligned square-section vertical box at (cx,0,cz), given a half-width and height. */
+    private void drawBox(GL2 gl, double cx, double cz, double hw, double height) {
+        double x0 = cx - hw, x1 = cx + hw, z0 = cz - hw, z1 = cz + hw;
+        double y0 = 0.0, y1 = height;
+        gl.glBegin(GL2.GL_QUADS);
+        // +X
+        gl.glNormal3d(1, 0, 0);
+        gl.glVertex3d(x1, y0, z0); gl.glVertex3d(x1, y0, z1); gl.glVertex3d(x1, y1, z1); gl.glVertex3d(x1, y1, z0);
+        // -X
+        gl.glNormal3d(-1, 0, 0);
+        gl.glVertex3d(x0, y0, z1); gl.glVertex3d(x0, y0, z0); gl.glVertex3d(x0, y1, z0); gl.glVertex3d(x0, y1, z1);
+        // +Z
+        gl.glNormal3d(0, 0, 1);
+        gl.glVertex3d(x1, y0, z1); gl.glVertex3d(x0, y0, z1); gl.glVertex3d(x0, y1, z1); gl.glVertex3d(x1, y1, z1);
+        // -Z
+        gl.glNormal3d(0, 0, -1);
+        gl.glVertex3d(x0, y0, z0); gl.glVertex3d(x1, y0, z0); gl.glVertex3d(x1, y1, z0); gl.glVertex3d(x0, y1, z0);
+        // top
+        gl.glNormal3d(0, 1, 0);
+        gl.glVertex3d(x0, y1, z0); gl.glVertex3d(x1, y1, z0); gl.glVertex3d(x1, y1, z1); gl.glVertex3d(x0, y1, z1);
+        gl.glEnd();
     }
 
     private void drawFlightPath(GL2 gl, BranchTrack tr, double simTime, int idx) {

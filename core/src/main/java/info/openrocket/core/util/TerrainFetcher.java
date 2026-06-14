@@ -155,9 +155,17 @@ public final class TerrainFetcher {
         double spacing = (2.0 * radius) / (n - 1);
 
         // Dune relief scales with the patch size so the desert reads as rolling
-        // dunes from altitude, but stays modest near the (flattened) launch pad.
+        // dunes from altitude, but stays modest near the launch site.
         double duneHeight = Math.min(30.0, Math.max(6.0, radius * 0.03));
-        double padRadius = Math.max(25.0, radius * 0.03); // flat cleared launch area
+
+        // The launch site is a flat, gently RAISED graded clearing (a prepared
+        // pad), with the surrounding dunes sloped smoothly down to meet it.  This
+        // is what stops the centre from reading as a pit: the pad sits slightly
+        // above its surroundings rather than being punched down to zero while the
+        // dunes tower around it.
+        double padRadius = Math.max(30.0, radius * 0.045);   // flat cleared pad
+        double apronRadius = padRadius * 3.0;                 // graded apron out to dunes
+        double padLevel = duneHeight * 0.12;                  // pad sits gently raised
 
         double[][] elevation = new double[n][n];
         double min = Double.POSITIVE_INFINITY;
@@ -170,11 +178,14 @@ public final class TerrainFetcher {
                 double east = (col - mid) * spacing;
                 double h = duneElevation(east, north, duneHeight, seed);
 
-                // Flatten the central launch-pad area, blending out to full dunes.
+                // Grade the clearing: flat pad inside padRadius, smooth (smoothstep)
+                // transition to full dunes by apronRadius.
                 double dist = Math.hypot(east, north);
-                if (dist < padRadius * 2.0) {
-                    double blend = Math.max(0.0, Math.min(1.0, (dist - padRadius) / padRadius));
-                    h *= blend;
+                if (dist < apronRadius) {
+                    double t = Math.max(0.0, Math.min(1.0,
+                            (dist - padRadius) / (apronRadius - padRadius)));
+                    double blend = t * t * (3 - 2 * t); // smoothstep
+                    h = padLevel + (h - padLevel) * blend;
                 }
 
                 elevation[row][col] = h;
@@ -195,8 +206,8 @@ public final class TerrainFetcher {
         // A few octaves of smooth value noise, plus a directional component so dunes
         // form ridges (as wind-blown sand does).  Wavelengths are kept well above the
         // grid spacing to avoid aliasing into spiky noise.
-        double[] wavelength = { 650.0, 300.0, 130.0 };
-        double[] weight     = { 1.0, 0.55, 0.28 };
+        double[] wavelength = { 650.0, 300.0, 130.0, 70.0, 40.0 };
+        double[] weight     = { 1.0, 0.55, 0.28, 0.15, 0.08 };
         double wsum = 0;
         for (int i = 0; i < wavelength.length; i++) {
             double f = 1.0 / wavelength[i];
