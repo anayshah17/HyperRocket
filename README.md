@@ -1,152 +1,202 @@
-![OpenRocket banner](.github/banner.png)
+# HyperRocket
 
-![Build Status](https://github.com/openrocket/openrocket/actions/workflows/build.yml/badge.svg)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
-![GitHub release](https://img.shields.io/github/release/openrocket/openrocket.svg)
-[![Github Releases (by release)](https://img.shields.io/github/downloads/openrocket/openrocket/latest/total.svg)](https://GitHub.com/openrocket/openrocket/releases/)
-[![Read the Docs](https://readthedocs.org/projects/openrocket/badge/?version=latest)](https://openrocket.readthedocs.io/en/latest/)
-[![snap release](https://snapcraft.io/openrocket/badge.svg)](https://snapcraft.io/openrocket)
-![Chocolatey release](https://img.shields.io/chocolatey/v/openrocket)
-[![Maven Central](https://maven-badges.sml.io/sonatype-central/info.openrocket/core/badge.svg)](https://maven-badges.sml.io/sonatype-central/info.openrocket/core/)
-[![Crowdin](https://badges.crowdin.net/openrocket/localized.svg)](https://crowdin.com/project/openrocket)
-[![Join our Discord server!](https://img.shields.io/discord/1073297014814691328?logo=discord)](https://discord.gg/qD2G5v2FAw)
 
-OpenRocket is a free, fully featured model rocket simulator that allows you to design and simulate your rockets before actually building and flying them.
+**HyperRocket** is an enhanced fork of the [OpenRocket](https://openrocket.info/)
+model-rocket simulator. It keeps everything that makes OpenRocket great — full
+six-degree-of-freedom flight simulation using the Barrowman aerodynamics method
+and RK4/RK6 numerical integration — and adds a layer of **failure modeling**,
+**real-world environmental data**, **more realistic descent physics**, and an
+**animated 3D flight replay**.
+
+If OpenRocket answers *"how high and how fast will it go?"*, HyperRocket also
+answers *"will it survive the flight, and what will it look like coming down?"*
+
+> HyperRocket is built on OpenRocket, which was created by Sampo Niskanen and
+> many contributors. HyperRocket is distributed under the same GNU GPL v3 license
+> and is fully compatible with the `.ork` design file format.
 
 --------
 
-## 🛠️ Design, Visualize, and Analyze
+## ✨ What HyperRocket Adds
 
-1. **Design** your rockets using a rich selection of built-in components:
-   ![Three-stage rocket - 2D](.github/OpenRocket_home_2D.png)
+| # | Feature | What it does |
+|---|---------|--------------|
+| 1 | **Structural failure simulation** | Fails components when aero + thrust loads exceed material strength |
+| 2 | **Thermal / aero-heating simulation** | Warns when surfaces melt or auto-ignite from air friction |
+| 3 | **Bond / joint strength modeling** | Models glue/tape/screw joints and fails them under shear |
+| 4 | **Recovery-device integrity** | Destroys a parachute that deploys too fast or overloads its shroud lines |
+| 5 | **Component misalignment** | Injects build imperfections (cocked fins/nose) that bend the flight path |
+| 6 | **Animated 3D flight replay** | Plays back the whole flight in 3D, including a realistic recovery scene |
+| 7 | **Terrain rendering** | Draws real desert terrain and a launch site beneath the rocket |
+| 8 | **Real weather import** | Pulls live atmospheric/wind data into the multi-level wind model |
+| 9 | **Extended material database** | Realistic strength/thermal defaults so failures fire on stock materials |
+| 10 | **Descent physics & calm-wind realism** | Canopy inflation transient + vertical descent in dead-calm air |
+| 11 | **Mission Control telemetry** | Live, replay-synced telemetry plots + event timeline beside the 3D view |
 
-2. **Visualize** your masterpiece in 3D:
-   ![Three-stage rocket - 3D](.github/OpenRocket_home_3D.png)
+A detailed, file-by-file breakdown lives in
+[CHANGES_AND_FEATURES.md](CHANGES_AND_FEATURES.md).
 
-3. **Plot & Analyze** your simulation results for precision and improvements:
-   ![Three-stage rocket - Simulation plot](.github/OpenRocket_sim.png)
+--------
 
-## 🌟 Features
+## ⚡ Optimizations & Physics Improvements
 
-- **Six-degree-of-freedom flight simulation**
-- **Automatic design optimization**
-- **Realtime simulated altitude, velocity, and acceleration display**
-- **Staging and clustering support**
-- **Export to other simulation programs (RockSim, RASAero II)**
-- **Export component(s) to OBJ file for 3D printing or SVG for laser cutting**
-- **Cross-platform (Java-based)**
+HyperRocket isn't only new features — it also fixes and sharpens the core
+simulation and rendering:
 
-... plus many more
+- **Calm-wind drift fixed.** Stock pink-noise wind applies turbulence as a
+  fraction of mean speed, which at near-zero wind behaves like a phantom steady
+  breeze — a slow parachute integrates it into metres of one-directional drift.
+  HyperRocket fades turbulence to zero below a 0.5 m/s mean wind (via a Hermite
+  smoothstep), so "0 wind" descends straight down. Flights with mean ≥ 0.5 m/s
+  are **bit-for-bit unchanged**.
+- **Canopy inflation transient.** Parachute drag now ramps up over ~0.4 s after
+  deployment instead of snapping on instantaneously, removing the unphysical
+  velocity discontinuity at ejection.
+- **Realistic recovery in 3D.** Under canopy the nose cone pops off and dangles
+  on the shock cord while the airframe swings beneath the parachute — each part
+  moving on its own decaying-pendulum phase rather than as a rigid body.
+- **Zero-allocation render loop.** The 3D replay reuses a single GLU quadric and
+  helper objects instead of allocating per frame, keeping playback smooth.
+- **Full state capture.** Position (X/Y), Euler tilt/heading, and the complete
+  orientation quaternion are now written to flight data every step — the data
+  the 3D replay (and any external tool) needs for accurate playback.
 
-📖 Read more on [our website](https://openrocket.info/).
+--------
 
-## 💾 Installers
+## 🚀 How to Use the New Features
 
-You can find the OpenRocket installers [here](https://openrocket.info/downloads.html).
+### 1 & 2 — Structural & Thermal Failure Simulation
+Both are toggles in the simulation editor:
+1. Open a simulation → **Edit simulation** → **Simulation options** tab.
+2. Under the **Failure Simulation** panel, tick **Enable structural failure**
+   and/or **Enable thermal simulation**.
+3. Run the simulation. If loads exceed a component's strength, or a surface
+   exceeds its melting / auto-ignition temperature, a warning appears in the
+   **Warnings** panel and a failure event is added to the flight.
 
-Release notes are available on each [release's page](https://github.com/openrocket/openrocket/releases) or on [our website](https://openrocket.info/release_notes.html).
+Strength and thermal limits come from each component's material. Stock materials
+ship with realistic defaults (feature #9), so failures fire out of the box. To
+tune them, edit a component's material → **Custom** and use the **Structural
+Properties** and **Thermal Properties** panels.
 
-## 📖 Documentation
+### 3 — Bond / Joint Strength
+1. Select a component in the design tree → its config dialog → **Bond Joint** tab.
+2. Pick a joint type (Epoxy, CA, Wood glue, Tape, Screws, Weld), then set the
+   **bond area (cm²)**, **shear strength (MPa)**, **quality factor (0–1)**, and a
+   **temperature limit**.
+3. Enable **structural failure** (see above). During flight the joint fails if
+   the shear force exceeds `shearStrength × bondArea × qualityFactor`.
 
-You can find our documentation on [ReadTheDocs](https://openrocket.readthedocs.io/en/latest/).
+Bond joints are saved into your `.ork` file, so they persist across sessions.
 
-## 🚀 Getting started
+### 4 — Recovery-Device Integrity
+1. Select a **parachute** or **streamer** → its config dialog → **Recovery
+   Integrity** panel.
+2. Set the **shroud-line strength (N)**, **max deployment velocity (m/s)**, and
+   **opening-shock factor**.
+3. If the device deploys above its velocity limit or its lines are overloaded, it
+   **fails destructively** — deployment is vetoed, the rocket continues a
+   ballistic descent, and a `PARACHUTE_FAILURE` event is logged. Leaving the
+   limits unset keeps stock behavior.
 
-**Check out [our documentation](https://openrocket.readthedocs.io/en/latest/setup/getting_started.html) for a detailled guide on how to get started.**
+### 5 — Component Misalignment
+1. Select any component → its config dialog → **Misalignment** tab.
+2. Dial in an **angular offset** (e.g. a cocked nose cone, slider 0–5°) and/or a
+   **radial offset** (slider 0–50 mm).
+3. The offsets inject a persistent force/torque every step, so an imperfect build
+   curves or coning during flight — no toggle needed, it's always active.
 
-The easiest way to get familiar with OpenRocket is to open one of our in-program example designs:
+### 6 — 3D Flight Replay
+1. Run a simulation.
+2. In the **Simulations** table, select it and click **Replay 3D**.
+3. The replay window opens with an orbit camera (drag to rotate, scroll to zoom),
+   ground/terrain, the flight-path trace, and **play / pause / speed** controls
+   plus a scrub slider. Watch staging, ejection, and the recovery descent.
 
-![Get started with the example designs](.github/getting-started.png)
+### 11 — Mission Control Telemetry
+When you open the 3D replay, a **Mission Control** panel appears on the right,
+locked to the replay clock — a miniature mission-control station for analysing the
+flight:
+1. Stacked, time-synchronised plots (Altitude, Velocity, Acceleration by default)
+   sit beside the 3D view, with live numeric read-outs and the replay time.
+2. A red cursor sweeps across all plots as the replay plays; **left-drag** any plot
+   to scrub the replay directly (the rocket, slider and read-outs all follow).
+3. **Mouse-wheel** zooms the timeline, **shift-drag** pans, **double-click** resets.
+4. Every flight event — including `STRUCTURAL_FAILURE`, `THERMAL_FAILURE`,
+   `BOND_FAILURE` and `PARACHUTE_FAILURE` — is a vertical marker; **hover** it for
+   the event name, source component and timestamp.
+5. The panel is **expandable** — use **Hide/Show telemetry** (or the split's
+   one-touch arrows) to collapse it — and **Fullscreen** blows the 3D viewer up to
+   the whole screen (press **Esc** to exit).
 
-Dive into the essentials: adjust component dimensions, plot a simulation, swap out motors, and more. Explore the impact of your changes and, most importantly, enjoy the process! 😊
+This lets you ask *why* a flight behaved as it did: line up the moment you see in
+3D with the telemetry, and read what happened just before a parachute or bond
+failure.
 
----
+### 7 — Terrain Rendering
+Terrain is generated automatically for the launch site and drawn beneath the
+rocket in the design-tab 3D view and in the 3D replay — no setup required.
 
-## 📐 OpenRocket-related Projects & Tools
-*Note: If you have an OpenRocket-related project you would like included in the list, you can file a new issue for it.*
+### 8 — Real Weather Import
+In **Simulation options**, use the weather-import control to fetch live
+atmospheric/wind data for your launch coordinates; it populates the multi-level
+wind model (which interpolates speed/direction/turbulence across altitude).
 
-### Core Projects
-| Project                                                                               | Type             | Description                                                    |
-|---------------------------------------------------------------------------------------|------------------|----------------------------------------------------------------|
-| [openrocket/openrocket](https://github.com/openrocket/openrocket)                     | Core project     | Main simulator (Java)                                          |
-| [openrocket/openrocket.github.io](https://github.com/openrocket/openrocket.github.io) | Website source   | Website content (Jekyll)                                       |
-| [openrocket/openrocket-database](https://github.com/openrocket/openrocket-database)   | Data enhancement | Expanded parts catalog (originally [dbcook/openrocket-database](https://github.com/dbcook/openrocket-database)) |
+### 9 — Extended Material Database
+Automatic. Stock materials now carry realistic strength and thermal properties,
+so structural/thermal warnings are meaningful without hand-editing every part.
 
-### Integration & Scripting
-| Project                                                                                 | Type                       | Description                                                                         |
-|-----------------------------------------------------------------------------------------|----------------------------|-------------------------------------------------------------------------------------|
-| [openrocket/orhelper](https://github.com/openrocket/orhelper)                           | Integration (Python)       | Python scripting/module for OpenRocket (via JPype) (forked from [SilentSys/orhelper](https://github.com/SilentSys/orhelper)) |
-| [RocketPy-Team/RocketSerializer](https://github.com/RocketPy-Team/RocketSerializer)     | Integration (Python)       | Convert `.ork` files to RocketPy-compatible formats                                 |
-| [SpaceTeam/ortools](https://github.com/SpaceTeam/ortools)                               | Integration Tools (Python) | Scripts like 6DOF landing scatter visualization                                     |
-| [schrum2/OpenRocketQD](https://github.com/schrum2/OpenRocketQD)                         | Optimization tool (Python) | Quality Diversity optimization for rocket designs                                   |
-| [waterloo-rocketry/or-monte-carlo](https://github.com/waterloo-rocketry/or-monte-carlo) | Simulation tool (Java)     | Monte Carlo simulation wrapper for OpenRocket                                       |
+### 10 — Descent Physics
+Automatic and always on. You'll notice straight-down descent in calm air and a
+smooth (rather than instantaneous) parachute opening.
 
-### Engine & Aerodynamics Extensions
-| Project                                                              | Type                     | Description                            |
-|----------------------------------------------------------------------|--------------------------|----------------------------------------|
-| [SpaceTeam/ORLEG](https://github.com/SpaceTeam/ORLEG)                | Engine modeling (Python) | Liquid-engine generator for OpenRocket |
-| [WPI-HPRC/ORBrake](https://github.com/WPI-HPRC/ORBrake) *(archived)* | Plugin (Java)            | Active drag control (air-brakes)       |
+--------
 
-### Wind & Atmospheric Data
-| Project                                    | Type                     | Description                                                                          |
-|--------------------------------------------|--------------------------|--------------------------------------------------------------------------------------|
-| [ORWind](https://gpsdriftcast.com/orwind/) | Atmospheric data utility | Fetches/imports multi-level wind data for OpenRocket                                 |
-| [Aloft](https://aloft.onrender.com/)       | Weather data utility     | Retrieves weather/atmospheric profiles (winds, temp, pressure) for flight simulation |
+## 🛠️ Build & Run
 
-### Design & CAD Integration
-| Project                                                               | Type          | Description                                                                   |
-|-----------------------------------------------------------------------|---------------|-------------------------------------------------------------------------------|
-| [FreeCAD Rocket Workbench](https://github.com/davesrocketshop/Rocket) | CAD workbench | A rocket design workbench for FreeCAD that can import OpenRocket `.ork` files |
+Requires **Java 17** and Gradle (a wrapper is included). On Windows use
+`gradlew.bat` instead of `./gradlew`.
 
-### Example Designs / Showcase
-| Project                                                                           | Type            | Description             |
-|-----------------------------------------------------------------------------------|-----------------|-------------------------|
-| [TrinetraOne-OpenRocket](https://github.com/ChinmayBhattt/TrinetraOne-OpenRocket) | Example designs | Showcase rocket project |
+**First-time setup** — the component database is a git submodule:
+```bash
+git submodule init
+git submodule update --remote
+```
 
----
+| Task | Command |
+|------|---------|
+| Run the app | `./gradlew run` |
+| Build (compile + test + checks) | `./gradlew build` |
+| Run all tests + static analysis | `./gradlew check` |
+| Core tests only | `./gradlew :core:test` |
+| Swing tests only | `./gradlew :swing:test` |
+| Build distributable JAR | `./gradlew dist` |
 
-## 💪 Contribute
+The project has two Gradle modules: **`core/`** (pure-Java physics, simulation,
+and file I/O — usable as a library) and **`swing/`** (the desktop UI, built on
+Java Swing + JOGL/OpenGL).
 
-Help us soar higher! Whether it's implementing features, writing documentation, or creating design examples, every contribution matters. Interested? Check out [how to get involved](https://openrocket.info/contribute.html) and the [practicalities of contributing](CONTRIBUTING.md).
+--------
 
-### ✨ Contributors
-- [Sampo Niskanen](https://github.com/plaa) - Original developer
-- [Doug Pedrick](https://github.com/rodinia814) - RockSim designs, printing
-- [Kevin Ruland](https://github.com/kruland2607) - Android version
-- [Bill Kuker](https://github.com/bkuker) - 3D visualization
-- [Richard Graham](https://github.com/rdgraham) - Geodetic computations
-- Jason Blood - Freeform fin set import
-- [Boris du Reau](https://github.com/bdureau) - Internationalization
-- [Daniel Williams](https://github.com/teyrana) - Pod support, maintainer
-- [Joe Pfeiffer](https://github.com/JoePfeiffer) - Maintainer
-- [Billy Olsen](https://github.com/wolsen) - Maintainer
-- [Sibo Van Gool](https://github.com/SiboVG) - RASAero file format, 3D OBJ export, dark theme, maintainer
-- [Neil Weinstock](https://github.com/neilweinstock) - Tester, icons, forum support
-- [H. Craig Miller](https://github.com/hcraigmiller) - Tester
+## 📂 Documentation
 
-You can view the full list of contributors [here](https://github.com/openrocket/openrocket/graphs/contributors).
+- [CHANGES_AND_FEATURES.md](CHANGES_AND_FEATURES.md) — full, file-level summary of
+  everything HyperRocket adds on top of OpenRocket.
+- [CLAUDE.md](CLAUDE.md) — architecture notes and developer guidance.
+- Underlying OpenRocket docs: [openrocket.readthedocs.io](https://openrocket.readthedocs.io/en/latest/).
 
-### 🌍Translators
-- Tripoli France
-- Tripoli Spain
-- Stefan Lobas / ERIG
-- Mauro Biasutti
-- Sky Dart Team / Ruslan V. Uss
-- Vladimir Beran
-- Polish Rocketry Society / Łukasz & Alex Kazanski
-- Sibo Van Gool
-- Mohamed Amin Elkebsi
-- Oleksandr Hladin
-- taotieren Simplified Chinese
+--------
 
-Want to help us translate OpenRocket into your language? Join our [Crowdin project](https://crowdin.com/project/openrocket) and contribute!
+## 🙏 Credits
+
+HyperRocket stands on the shoulders of **OpenRocket** and its community.
+OpenRocket was originally developed by **Sampo Niskanen** and a large group of
+contributors and translators — see the full list on the
+[OpenRocket contributors page](https://github.com/openrocket/openrocket/graphs/contributors).
 
 ## 📜 License
 
-OpenRocket is proudly open-source under the [GNU GPL](https://www.gnu.org/licenses/gpl-3.0.en.html) license. Feel free to use, study, and extend.
-
----
- 
-⭐ Please give us a star if you find OpenRocket useful, and spread the word! ⭐
-
-[![Star History Chart](https://api.star-history.com/svg?repos=openrocket/openrocket&type=Date)](https://star-history.com/#openrocket/openrocket&Date)
+HyperRocket, like OpenRocket, is open-source under the
+[GNU GPL v3](https://www.gnu.org/licenses/gpl-3.0.en.html) license. Feel free to
+use, study, and extend it.

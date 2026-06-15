@@ -102,7 +102,7 @@ public class SlideShowDialog extends JDialog {
 	
 	public void setSlideSet(SlideSet slideSet, int position) {
 		this.slideSet = slideSet;
-		this.setTitle(slideSet.getTitle() + " " + Chars.EMDASH + " OpenRocket");
+		this.setTitle(slideSet.getTitle() + " " + Chars.EMDASH + " HyperRocket");
 		slideShowComponent.setStyleSheet(slideSet.getStyleSheet());
 		setPosition(position);
 	}

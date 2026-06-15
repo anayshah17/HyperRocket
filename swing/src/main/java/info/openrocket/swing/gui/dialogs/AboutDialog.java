@@ -30,7 +30,7 @@ public class AboutDialog extends JDialog {
 	private final Translator trans = Application.getTranslator();
 	
 	private final String CREDITS = "<html><center>" +
-		"<font size=\"+1\"><b>OpenRocket has been developed by:</b></font><br>" +
+		"<font size=\"+1\"><b>HyperRocket is built on OpenRocket, which has been developed by:</b></font><br>" +
 		"<br>" +
 		"Sampo Niskanen (main developer)<br>" +
 		"Doug Pedrick (RockSim file format, printing)<br>" +
@@ -64,7 +64,7 @@ public class AboutDialog extends JDialog {
 		"<b>Thank you to our financial contributors who have provided us with the necessary resources to continue this project:</b><br>" +
 		href("https://opencollective.com/openrocket", true, true) + "<br>" +
 		"<br>" +
-		"<b>OpenRocket utilizes the following libraries:</b><br>" +
+		"<b>HyperRocket utilizes the following libraries:</b><br>" +
 		"<br>" +
 		"MiG Layout" + href("http://www.miglayout.com", true, true) + "<br>" +
 		"JFreeChart" + href("http://www.jfree.org/jfreechart", true, true) + "<br>" +
@@ -86,7 +86,7 @@ public class AboutDialog extends JDialog {
 		"Gradle Modules Plugin" + href("https://github.com/java9-modularity/gradle-modules-plugin", true, true) + "<br>" +
 		"Lucide Icons" + href("https://lucide.dev", true, true) + "<br>" +
 		"<br>" +
-		"<b>OpenRocket gratefully acknowledges our use of the following databases:</b><br>" +
+		"<b>HyperRocket gratefully acknowledges our use of the following databases:</b><br>" +
 		"<br>" +
 		"Rocket Motor Data" + href("https://www.thrustcurve.org", true, true) + "<br>" +
 		"Enhanced components database for OpenRocket" + href("https://github.com/dbcook/openrocket-database", true, true) +
@@ -106,14 +106,14 @@ public class AboutDialog extends JDialog {
 		JPanel sub;
 		
 		
-		// OpenRocket logo
-		panel.add(new JLabel(Icons.loadImageIcon("pix/icon/icon-128.png", "OpenRocket")), "top");
-		
-		
-		// OpenRocket version info + copyright
+		// HyperRocket logo
+		panel.add(new JLabel(Icons.loadImageIcon("pix/icon/icon-128.png", "HyperRocket")), "top");
+
+
+		// HyperRocket version info + copyright
 		sub = new JPanel(new MigLayout("fill"));
-		
-		sub.add(new StyledLabel("OpenRocket", 20), "ax 50%, growy, wrap para");
+
+		sub.add(new StyledLabel("HyperRocket", 20), "ax 50%, growy, wrap para");
 		sub.add(new StyledLabel(trans.get("lbl.version").trim() + " " + version, 3), "ax 50%, growy, wrap rel");
 		String copyright = String.format("Copyright %c 2007-%s Sampo Niskanen and others", Chars.COPY, copyrightYear);
 		sub.add(new StyledLabel(copyright), "ax 50%, growy, wrap para");
@@ -171,7 +171,7 @@ public class AboutDialog extends JDialog {
 		panel.add(close, "spanx, right");
 		
 		this.add(panel);
-		this.setTitle("OpenRocket " + version);
+		this.setTitle("HyperRocket " + version);
 		this.pack();
 		this.setLocationRelativeTo(parent);
 		

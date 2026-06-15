@@ -33,7 +33,7 @@ final class OSXSetup {
 	private static final Logger log = LoggerFactory.getLogger(OSXSetup.class);
 
 	// The name in the app menu
-	private static final String APP_NAME = "OpenRocket";
+	private static final String APP_NAME = "HyperRocket";
 	
 	// The image resource to use for the Dock Icon
 	private static final String ICON_RSRC = "/pix/icon/icon-256.png";

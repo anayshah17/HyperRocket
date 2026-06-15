@@ -225,9 +225,9 @@ public class BugReportDialog extends JDialog {
 	
 	private static void addSystemInformation(StringBuilder sb) {
 		StringBuilder sbTemp = new StringBuilder();
-		sbTemp.append("OpenRocket version: " + BuildProperties.getVersion() + "\n");
-		sbTemp.append("OpenRocket source: " + BuildProperties.getBuildSource() + "\n");
-		sbTemp.append("OpenRocket location: " + JarUtil.getCurrentJarFile() + "\n");
+		sbTemp.append("HyperRocket version: " + BuildProperties.getVersion() + "\n");
+		sbTemp.append("HyperRocket source: " + BuildProperties.getBuildSource() + "\n");
+		sbTemp.append("HyperRocket location: " + JarUtil.getCurrentJarFile() + "\n");
 		sbTemp.append("User-defined thrust curves location: " + preferences.getUserThrustCurveFilesAsString() + "\n");
 		sbTemp.append("User-defined component presets location: " + preferences.getUserComponentPresetFilesAsString() + "\n");
 		sbTemp.append("LAF: " + UIManager.getLookAndFeel().getClass().getName() + "\n");

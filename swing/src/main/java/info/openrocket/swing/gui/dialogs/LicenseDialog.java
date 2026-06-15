@@ -29,8 +29,8 @@ public class LicenseDialog extends JDialog {
 		
 		JPanel panel = new JPanel(new MigLayout("fill"));
 		
-		// OpenRocket logo
-		panel.add(new JLabel(Icons.loadImageIcon("pix/icon/icon-128.png", "OpenRocket")), "top");
+		// HyperRocket logo
+		panel.add(new JLabel(Icons.loadImageIcon("pix/icon/icon-128.png", "HyperRocket")), "top");
 		
 		panel.add(new StyledLabel("Software Licenses", 10), "ax 50%, pushx, wrap para");
 
@@ -154,7 +154,7 @@ public class LicenseDialog extends JDialog {
 		panel.add(close, "spanx, right");
 		
 		this.add(panel);
-		this.setTitle("OpenRocket license");
+		this.setTitle("HyperRocket license");
 		this.pack();
 		this.setLocationRelativeTo(parent);
 		

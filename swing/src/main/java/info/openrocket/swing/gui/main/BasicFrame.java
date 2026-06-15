@@ -1196,8 +1196,8 @@ private static final Translator trans = Application.getTranslator();
 		////	Debug menu
 		menu = new JMenu("Debug");
 
-		////	OpenRocket debugging tasks
-		menu.getAccessibleContext().setAccessibleDescription("OpenRocket debugging tasks");
+		////	HyperRocket debugging tasks
+		menu.getAccessibleContext().setAccessibleDescription("HyperRocket debugging tasks");
 
 		////	What is this menu?
 		item = new JMenuItem("What is this menu?");

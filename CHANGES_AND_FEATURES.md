@@ -1,13 +1,14 @@
-# Changes From Base OpenRocket & Added Features
+# HyperRocket — Changes From Base OpenRocket & Added Features
 
-This document summarizes everything this fork adds on top of stock OpenRocket.
-Stock OpenRocket simulates model-rocket flight using the Barrowman aerodynamics
-method and RK4/RK6 6-DOF integration. This fork extends it with **structural,
-thermal, and recovery failure modeling**, **real-world weather/terrain data**,
-and an **animated 3D flight replay**.
+This document summarizes everything **HyperRocket** adds on top of stock
+OpenRocket. Stock OpenRocket simulates model-rocket flight using the Barrowman
+aerodynamics method and RK4/RK6 6-DOF integration. HyperRocket extends it with
+**structural, thermal, and recovery failure modeling**, **real-world
+weather/terrain data**, **more realistic descent physics**, and an **animated 3D
+flight replay**.
 
 Branch: `feature/failure-sim-and-3d-replay`
-Scope: 39 files changed, ~5,300 lines added, 15 new source/test files.
+Scope: 48 files changed, ~6,500 lines added, 16 new source/test files.
 
 ---
 
@@ -24,6 +25,8 @@ Scope: 39 files changed, ~5,300 lines added, 15 new source/test files.
 | 7 | Terrain rendering | `TerrainRenderer` + `TerrainFetcher` | Design 3D / replay |
 | 8 | Real weather import | `WeatherFetcher` | Simulation options |
 | 9 | Extended material database | `MaterialPhysicalDefaults` | Automatic |
+| 10 | Descent physics & calm-wind realism | `BasicLandingStepper`, `PinkNoiseWindModel` | Automatic |
+| 11 | Mission Control telemetry | swing `MissionControlTelemetryPanel` | Always on in 3D replay |
 
 ---
 
@@ -81,7 +84,11 @@ Models aerodynamic heating and warns on melt / auto-ignition.
 ## 4. Recovery-Device Integrity
 
 - **`simulation/listeners/RecoveryIntegrityListener.java`** *(new)* — checks at
-  the `RECOVERY_DEVICE_DEPLOYMENT` event; always on.
+  the `RECOVERY_DEVICE_DEPLOYMENT` event; always on. A chute that exceeds its
+  user-set deployment-velocity or shroud-line limit now **fails destructively**:
+  the deployment is vetoed (no drag → ballistic descent) and a
+  `PARACHUTE_FAILURE` event fires. Stock chutes with no limits set are
+  unaffected.
 - **`rocketcomponent/RecoveryDevice.java`** — added `shroudLineStrength` (N),
   `maxDeploymentVelocity` (m/s), `openingShockFactor`, with `copyWithOriginalID`
   support.
@@ -101,9 +108,16 @@ Models aerodynamic heating and warns on melt / auto-ignition.
 
 Animated playback of a completed simulation.
 
-- **`gui/simulation/SimulationReplayPanel.java`** *(new, ~1,300 lines)* — JOGL
+- **`gui/simulation/SimulationReplayPanel.java`** *(new, ~1,600 lines)* — JOGL
   `GLJPanel` with orbit camera, ground plane/grid, flight-path polyline, staged
   rocket body, parachute, play/pause/speed controls, and a scrub slider.
+- **Realistic recovery scene** — under canopy the nose cone pops off and dangles
+  on the shock cord while the airframe hangs from the parachute, each part
+  swinging loosely on its own phase (a decaying multi-pendulum) rather than as a
+  rigid body. The hanging airframe reuses the detailed rocket model with the
+  nose cone hidden (new `RocketRenderer.render(...)` ignore-set overload), so its
+  shape stays continuous with ascent instead of swapping in a plain tube. The
+  render loop reuses a single `GLUquadric`, allocating nothing per frame.
 - **`gui/simulation/SimulationReplayDialog.java`** *(new)* — 900×700 modeless
   dialog wrapping the panel.
 - **`gui/main/SimulationPanel.java`** — "Replay 3D" button + `Replay3DAction`.
@@ -139,12 +153,66 @@ Animated playback of a completed simulation.
 - **`unit/UnitGroup.java`** — `UNITS_SHEAR_MODULUS` gains an MPa unit so strength
   values (10–1000 MPa) display sensibly.
 
+## 10. Descent Physics & Calm-Wind Realism
+
+Makes recovery descent behave physically; all changes are automatic and leave
+normal (non-calm) ascent flights bit-for-bit unchanged.
+
+- **`models/wind/PinkNoiseWindModel.java`** — fades turbulence to zero as the
+  mean wind approaches calm (below a 0.5 m/s threshold, via a Hermite
+  `smoothstep`). Pink noise has heavy low-frequency power, so a non-zero standard
+  deviation at near-zero mean speed behaves like a phantom steady breeze that a
+  slow parachute descent integrates into a large, always-same-direction drift.
+  Flights with mean ≥ 0.5 m/s are unaffected.
+- **`simulation/BasicLandingStepper.java`** — models the canopy **inflation
+  transient**: drag ramps up over ~0.4 s after deployment instead of jumping
+  instantaneously. Per-device deploy time is tracked in `SimulationStatus`.
+- **`simulation/SimulationStatus.java`** — records per-device deployment time to
+  drive the inflation ramp and the destructive-failure check.
+
+## 11. Mission Control Telemetry
+
+Turns the 3D replay from "watching a rocket fly" into "analysing a mission": a
+telemetry panel docked beside the 3D view, locked to the replay clock.
+
+- **`gui/simulation/MissionControlTelemetryPanel.java`** *(new)* — a stack of
+  compact, time-synchronised mini plots built on OpenRocket's existing JFreeChart
+  stack (`CombinedDomainXYPlot` with one subplot per channel sharing a single
+  time axis). Default channels are **Altitude**, **Velocity** and
+  **Acceleration**; the channel list is just a `List<FlightDataType>`, so adding a
+  new telemetry trace is a one-line change.
+- **Pulls data straight from `FlightDataBranch`** (branch 0) — nothing is
+  recomputed. Live numeric read-outs show the value at the cursor for every
+  channel plus the replay time.
+- **Two-way replay sync.** `SimulationReplayPanel.refreshFrame()` pushes the
+  current time into `setTime(...)`, advancing a cursor `ValueMarker` across all
+  plots; conversely dragging/clicking a plot calls back through a
+  `ReplayController` (`SimulationReplayPanel.seekToTime(...)`) to move the rocket,
+  the slider, the read-outs and the highlighted events. Speed changes and pausing
+  don't affect cursor accuracy (the cursor tracks the frame's actual time).
+- **Event timeline.** Every `FlightEvent` across all branches is drawn as a
+  colour-coded vertical marker (reusing the `FlightEvent` objects directly),
+  including the HyperRocket failure events `STRUCTURAL_FAILURE`,
+  `THERMAL_FAILURE`, `BOND_FAILURE` and `PARACHUTE_FAILURE`. Hovering a marker
+  shows a tooltip with the event name, the source component and its timestamp.
+- **Timeline interaction.** Mouse-wheel zooms the time axis (all plots together),
+  shift-drag pans, double-click resets the zoom, and left-drag scrubs the replay.
+- **Wiring — `gui/simulation/SimulationReplayPanel.java`** — the 3D view, stats
+  sidebar and controls move into a left `replayArea`; a `JSplitPane` puts the
+  telemetry panel on the right. `SimulationReplayDialog` is widened to 1280×760.
+- **Expandable panel & fullscreen.** A "Hide/Show telemetry" button (plus the
+  split's one-touch arrows) collapses or expands Mission Control, and a
+  "Fullscreen" button makes the 3D viewer take the whole screen (exclusive
+  fullscreen where supported, otherwise a maximised borderless window; **Esc**
+  exits). Entering fullscreen auto-collapses telemetry and restores it on exit.
+
 ---
 
 ## Cross-Cutting Core Changes
 
 - **`simulation/FlightEvent.java`** — new `FlightEvent.Type` values for the
-  failure modes above.
+  failure modes above, including `PARACHUTE_FAILURE` for destructive recovery
+  failure.
 - **`logging/Warning.java`** — new `Warning` subclasses surfaced in the warnings
   panel for each failure type.
 - **`document/Simulation.java`** — registers the four custom listeners in
@@ -158,7 +226,7 @@ Animated playback of a completed simulation.
 
 | Listener | Always on? | What it checks |
 |----------|-----------|----------------|
-| `RecoveryIntegrityListener` | Yes | Shroud-line strength & deployment velocity at deployment |
+| `RecoveryIntegrityListener` | Yes | Shroud-line strength & deployment velocity at deployment; vetoes deployment (destructive failure) when exceeded |
 | `MisalignmentListener` | Yes | Applies angular/radial offset forces every step |
 | `StructuralFailureListener` | Toggle | Aero + thrust loads vs material strength |
 | `ThermalSimulationListener` | Toggle | Heat transfer vs melt / ignition thresholds |
@@ -169,6 +237,8 @@ Animated playback of a completed simulation.
 - `simulation/listeners/FailureListenerTest.java` — structural & thermal failures.
 - `simulation/listeners/Phase3ListenerTest.java` — recovery & misalignment.
 - `core/util/WeatherFetcherTest.java` — weather parsing.
+- `simulation/RecoveryRealismTest.java` — calm vertical descent, no drift at
+  zero-mean turbulence, and destructive parachute failure.
 
 > Note: 3 pre-existing `ExampleFilesTest` preset-match failures are baseline
 > (component-database submodule), not regressions from this work.

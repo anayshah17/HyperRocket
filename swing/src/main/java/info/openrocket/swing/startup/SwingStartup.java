@@ -119,7 +119,7 @@ public class SwingStartup {
 					String title = "Unsupported Java version";
 					String message1 = "Unsupported Java version: %s";
 					String message2 = "Supported version(s): %s";
-					String message3 = "Please change the Java Runtime Environment version or install OpenRocket using a packaged installer.";
+					String message3 = "Please change the Java Runtime Environment version or install HyperRocket using a packaged installer.";
 
 					StringBuilder message = new StringBuilder();
 					message.append(String.format(message1, JREVersion));
@@ -273,7 +273,7 @@ public class SwingStartup {
 		if (GraphicsEnvironment.isHeadless()) {
 			log.error("Application is headless.");
 			System.err.println();
-			System.err.println("OpenRocket cannot currently be run without the graphical " +
+			System.err.println("HyperRocket cannot currently be run without the graphical " +
 					"user interface.");
 			System.err.println();
 			System.exit(1);
