@@ -124,4 +124,26 @@ public class RecoveryRealismTest extends BaseTestCase {
 		List<Double> v = b.get(FlightDataType.TYPE_VELOCITY_TOTAL);
 		return v.get(v.size() - 1);
 	}
+
+	/**
+	 * The canopy fill time scales with size — a larger canopy takes longer to inflate — and is
+	 * clamped to a physically sane range.
+	 *
+	 * @see BasicLandingStepper#inflationTime
+	 */
+	@Test
+	public void testInflationTimeScalesWithCanopySize() {
+		Parachute small = new Parachute();
+		small.setDiameter(0.2);   // 0.2 m canopy
+		Parachute large = new Parachute();
+		large.setDiameter(1.5);   // 1.5 m canopy
+
+		double tSmall = BasicLandingStepper.inflationTime(small);
+		double tLarge = BasicLandingStepper.inflationTime(large);
+
+		assertTrue(tLarge > tSmall,
+				"A larger canopy must take longer to inflate: small=" + tSmall + " large=" + tLarge);
+		assertTrue(tSmall >= 0.15 - 1e-9 && tLarge <= 1.5 + 1e-9,
+				"Inflation time must stay within the documented [0.15, 1.5] s range");
+	}
 }

@@ -21,8 +21,9 @@ public class SimulationReplayDialog extends JDialog {
 
         // GLJPanel reports zero preferred height before first render; pack() would
         // collapse the dialog. setSize() bypasses preferred-size negotiation entirely.
-        setSize(900, 700);
-        setMinimumSize(new Dimension(600, 400));
+        // Wider than the bare 3D view to give the Mission Control telemetry panel room.
+        setSize(1280, 760);
+        setMinimumSize(new Dimension(800, 460));
         setLocationRelativeTo(parent);
 
         addWindowListener(new java.awt.event.WindowAdapter() {

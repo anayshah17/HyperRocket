@@ -13,6 +13,7 @@ import info.openrocket.core.simulation.FlightDataBranch;
 import info.openrocket.core.simulation.FlightDataType;
 import info.openrocket.core.simulation.SimulationStatus;
 import info.openrocket.core.simulation.exception.SimulationException;
+import info.openrocket.core.util.CoordinateIF;
 
 /**
  * Simulation listener that models component misalignment and applies its effect to the flight.
@@ -34,12 +35,17 @@ public class MisalignmentListener extends AbstractSimulationListener {
 
     private static final double SIDE_FORCE_WARNING_THRESHOLD_N = 0.1;
 
-    /** Pitch-moment coefficient added per radian of summed angular offset. */
-    private static final double PITCH_GAIN_PER_RAD = 3.0;
-    /** Roll-moment coefficient added per radian of summed angular offset. */
-    private static final double ROLL_GAIN_PER_RAD = 0.6;
-    /** Pitch-moment coefficient added per metre of summed radial offset (thrust-line offset). */
-    private static final double RADIAL_PITCH_GAIN_PER_M = 8.0;
+    /**
+     * Empirical scale for the roll moment a tilted component sheds.  Unlike the pitch terms
+     * (which are derived from geometry, see {@link #postAerodynamicCalculation}), the rolling
+     * effect of an off-axis component comes from asymmetric/vortex flow that has no clean
+     * closed form in a per-component listener, so this stays a documented approximation.
+     */
+    private static final double ROLL_COEFF_SCALE = 0.5;
+
+    /** Dynamic pressure (Pa) below which the thrust-offset moment is not injected (avoids the
+     *  q-normalised coefficient blowing up at near-zero airspeed just off the pad). */
+    private static final double MIN_DYNAMIC_PRESSURE = 1.0;
 
     /** Components that have already received a misalignment warning this run. */
     private final Set<UUID> warnedComponents = new HashSet<>();
@@ -50,9 +56,18 @@ public class MisalignmentListener extends AbstractSimulationListener {
     }
 
     /**
-     * Injects the misalignment moment into the total aerodynamic forces so the
-     * trajectory actually deviates.  Returns {@code null} (no change) when the
-     * rocket is perfectly aligned.
+     * Injects the misalignment moment into the total aerodynamic forces so the trajectory
+     * actually deviates.  The pitch contributions are derived from real geometry rather than
+     * tuned gains:
+     * <ul>
+     *   <li><b>Angular tilt</b> of a component presents a side force {@code q·A·sin(a)} acting at
+     *       its distance from the CG, giving a pitching-moment coefficient
+     *       {@code Cm = (A/Aref)·sin(a)·(arm/Lref)} — the dynamic pressure cancels, so it is
+     *       purely geometric.</li>
+     *   <li><b>Radial (thrust-line) offset</b> of an active motor produces the exact moment
+     *       {@code M = thrust·r}, i.e. {@code Cm = thrust·r/(q·Aref·Lref)}.</li>
+     * </ul>
+     * Returns {@code null} (no change) when the rocket is perfectly aligned.
      */
     @Override
     public AerodynamicForces postAerodynamicCalculation(SimulationStatus status, AerodynamicForces forces)
@@ -61,7 +76,37 @@ public class MisalignmentListener extends AbstractSimulationListener {
             return null;
         }
 
-        double pitchAdd = 0.0;
+        // Cheap early-out for a perfectly aligned rocket (the common case): skip the CG,
+        // dynamic-pressure and branch work entirely.  This listener is always on and aero is
+        // evaluated several times per step, so a nominal flight must pay nothing here.
+        boolean hasOffset = false;
+        for (RocketComponent comp : status.getConfiguration().getActiveComponents()) {
+            if (comp.getAngularOffset() != 0.0 || comp.getRadialOffset() != 0.0) {
+                hasOffset = true;
+                break;
+            }
+        }
+        if (!hasOffset) {
+            return null;
+        }
+
+        double aRef = status.getConfiguration().getReferenceArea();
+        double lRef = status.getConfiguration().getReferenceLength();
+        if (aRef <= 0 || lRef <= 0) {
+            return null;
+        }
+
+        FlightDataBranch branch = status.getFlightDataBranch();
+        double rho = safeGet(branch, FlightDataType.TYPE_AIR_DENSITY);
+        if (rho <= 0) {
+            rho = 1.225;
+        }
+        double v = status.getRocketVelocity().length();
+        double q = 0.5 * rho * v * v;
+        double thrust = safeGet(branch, FlightDataType.TYPE_THRUST_FORCE);
+        double cgX = estimateCgX(status);
+
+        double cmAdd = 0.0;
         double rollAdd = 0.0;
         for (RocketComponent comp : status.getConfiguration().getActiveComponents()) {
             double a = comp.getAngularOffset();
@@ -69,23 +114,50 @@ public class MisalignmentListener extends AbstractSimulationListener {
             if (a == 0.0 && r == 0.0) {
                 continue;
             }
-            pitchAdd += a * PITCH_GAIN_PER_RAD + r * RADIAL_PITCH_GAIN_PER_M;
-            rollAdd += a * ROLL_GAIN_PER_RAD;
+
+            if (a != 0.0) {
+                double aComp = estimateFrontalArea(comp);
+                double arm = axialPosition(comp) - cgX;
+                cmAdd += (aComp / aRef) * Math.sin(a) * (arm / lRef);
+                rollAdd += ROLL_COEFF_SCALE * (aComp / aRef) * Math.sin(a);
+            }
+
+            if (r != 0.0 && thrust > 0.0 && q > MIN_DYNAMIC_PRESSURE) {
+                cmAdd += (thrust * r) / (q * aRef * lRef);
+            }
         }
 
-        if (pitchAdd == 0.0 && rollAdd == 0.0) {
+        if (cmAdd == 0.0 && rollAdd == 0.0) {
             return null;
         }
 
         double cm = forces.getCm();
         double croll = forces.getCroll();
         if (!Double.isNaN(cm)) {
-            forces.setCm(cm + pitchAdd);
+            forces.setCm(cm + cmAdd);
         }
         if (!Double.isNaN(croll)) {
             forces.setCroll(croll + rollAdd);
         }
         return forces;
+    }
+
+    /** Mass-weighted mean axial position (m) of the active components — a cheap CG estimate. */
+    private static double estimateCgX(SimulationStatus status) {
+        double mSum = 0.0;
+        double mxSum = 0.0;
+        for (RocketComponent comp : status.getConfiguration().getActiveComponents()) {
+            double m = comp.getMass();
+            mSum += m;
+            mxSum += m * axialPosition(comp);
+        }
+        return (mSum > 0) ? mxSum / mSum : 0.0;
+    }
+
+    /** Absolute axial position (m, nose = 0) of a component's first instance, or 0 if unknown. */
+    private static double axialPosition(RocketComponent comp) {
+        CoordinateIF[] locs = comp.getComponentLocations();
+        return (locs != null && locs.length > 0) ? locs[0].getX() : 0.0;
     }
 
     @Override

@@ -9,7 +9,11 @@ import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
+import java.awt.GraphicsDevice;
+import java.awt.Rectangle;
 import java.awt.RenderingHints;
+import java.awt.Window;
+import java.awt.event.ActionEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.event.MouseWheelEvent;
@@ -27,14 +31,18 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import javax.swing.AbstractAction;
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
 import javax.swing.JCheckBoxMenuItem;
 import javax.swing.JComboBox;
+import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JPopupMenu;
 import javax.swing.JSlider;
+import javax.swing.JSplitPane;
+import javax.swing.KeyStroke;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 
@@ -105,6 +113,16 @@ public class SimulationReplayPanel extends JPanel implements GLEventListener {
     // throwing the whole field into shadow.
     private static final float[] SUN_DIRECTION = { 0.55f, 1.3f, 0.85f, 0f };
 
+    // Precomputed normalised sun direction — SUN_DIRECTION is constant, so there is
+    // no need to re-normalise it every frame in drawSun().
+    private static final double SUN_DIR_LEN = Math.sqrt(
+            SUN_DIRECTION[0] * SUN_DIRECTION[0]
+            + SUN_DIRECTION[1] * SUN_DIRECTION[1]
+            + SUN_DIRECTION[2] * SUN_DIRECTION[2]);
+    private static final double SUN_DIR_NX = SUN_DIRECTION[0] / SUN_DIR_LEN;
+    private static final double SUN_DIR_NY = SUN_DIRECTION[1] / SUN_DIR_LEN;
+    private static final double SUN_DIR_NZ = SUN_DIRECTION[2] / SUN_DIR_LEN;
+
     private final OpenRocketDocument document;
     private final Simulation simulation;
     private final FlightConfiguration configuration;
@@ -112,6 +130,29 @@ public class SimulationReplayPanel extends JPanel implements GLEventListener {
     private Component canvas; // GLJPanel (lightweight, safe for embedding in dialogs)
     private RocketRenderer renderer;
     private boolean rendererReady = false;
+
+    /** Holds the 3D view, stats sidebar and playback controls; the left half of the split. */
+    private final JPanel replayArea = new JPanel(new BorderLayout());
+    /** Mission-control telemetry panel synced to the replay clock (right half of the split). */
+    private MissionControlTelemetryPanel telemetryPanel;
+    /** Split between the replay area (left) and the telemetry panel (right). */
+    private JSplitPane mainSplit;
+    /** Last divider position before the telemetry panel was collapsed, so it can be restored. */
+    private int lastDividerLocation = 900;
+    /** Whether the Mission Control panel is currently expanded. */
+    private boolean telemetryExpanded = true;
+    /** Whether the 3D viewer is currently shown fullscreen. */
+    private boolean fullscreen = false;
+    /** Telemetry expansion state to restore when leaving fullscreen. */
+    private boolean telemetryExpandedBeforeFullscreen = true;
+    /** Window bounds saved before a manual (non-exclusive) fullscreen, for restoration. */
+    private Rectangle savedWindowBounds;
+    private JButton telemetryToggleButton;
+    private JButton fullscreenButton;
+
+    // Reused GLU helper and quadric so the render loop allocates nothing per frame.
+    private final GLU glu = new GLU();
+    private com.jogamp.opengl.glu.GLUquadric quadric;
 
     /** Per-stage flight tracks (index 0 = sustainer, others = separated boosters). */
     private final List<BranchTrack> tracks = new ArrayList<>();
@@ -149,6 +190,8 @@ public class SimulationReplayPanel extends JPanel implements GLEventListener {
     private double noseConeLength = 0.0;
     /** The nose-cone component, hidden from the dangling airframe once it has popped off. */
     private NoseCone noseConeComp = null;
+    /** Cached ignore-set ({@link #noseConeComp}) passed to the renderer each deployed frame. */
+    private Set<RocketComponent> noseIgnoreSet = Collections.emptySet();
 
     // Locally-generated desert ground (never null after loadFlightData).
     private TerrainFetcher.TerrainData terrain;
@@ -203,7 +246,33 @@ public class SimulationReplayPanel extends JPanel implements GLEventListener {
         loadFlightData();
         initGLCanvas();
         initControls();
-        add(buildStatsPanel(), BorderLayout.EAST);
+        replayArea.add(buildStatsPanel(), BorderLayout.EAST);
+
+        if (frameCount > 0) {
+            telemetryPanel = new MissionControlTelemetryPanel(simulation);
+            telemetryPanel.setReplayController(this::seekToTime);
+            mainSplit = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, replayArea, telemetryPanel);
+            mainSplit.setResizeWeight(1.0);       // extra width on resize goes to the 3D view
+            mainSplit.setContinuousLayout(true);
+            mainSplit.setOneTouchExpandable(true);
+            // Pixel divider so the GLJPanel's zero preferred size can't squeeze the 3D view.
+            mainSplit.setDividerLocation(lastDividerLocation);
+            add(mainSplit, BorderLayout.CENTER);
+        } else {
+            add(replayArea, BorderLayout.CENTER);
+        }
+
+        // Esc leaves fullscreen.
+        getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW)
+                .put(KeyStroke.getKeyStroke("ESCAPE"), "exitFullscreen");
+        getActionMap().put("exitFullscreen", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                if (fullscreen) {
+                    toggleFullscreen();
+                }
+            }
+        });
     }
 
     // ---- Data model --------------------------------------------------------
@@ -223,6 +292,11 @@ public class SimulationReplayPanel extends JPanel implements GLEventListener {
         final List<FlightEvent> events;
         /** Stage number this branch's body represents (boosters); -1 for the sustainer. */
         int stageNumber = -1;
+
+        /** Interleaved (x, alt, z) path vertices in a direct buffer, built once for glDrawArrays. */
+        final java.nio.DoubleBuffer pathVertices;
+        /** Number of (x, alt, z) points available in {@link #pathVertices}. */
+        final int pathCount;
 
         BranchTrack(FlightDataBranch b, boolean sustainer) {
             this.sustainer = sustainer;
@@ -251,6 +325,18 @@ public class SimulationReplayPanel extends JPanel implements GLEventListener {
                     }
                 }
             }
+
+            // Pre-pack the flight path into a direct buffer so it can be drawn with a
+            // single glDrawArrays call per frame instead of one JNI glVertex3d per sample.
+            int n = Math.min(x.length, Math.min(alt.length, z.length));
+            this.pathCount = n;
+            java.nio.DoubleBuffer pv = ByteBuffer.allocateDirect(Math.max(1, n) * 3 * Double.BYTES)
+                    .order(ByteOrder.nativeOrder()).asDoubleBuffer();
+            for (int i = 0; i < n; i++) {
+                pv.put(x[i]).put(alt[i]).put(z[i]);
+            }
+            pv.rewind();
+            this.pathVertices = pv;
         }
 
         boolean hasData() { return t.length > 0; }
@@ -339,6 +425,7 @@ public class SimulationReplayPanel extends JPanel implements GLEventListener {
             if (c instanceof NoseCone) {
                 noseConeComp = (NoseCone) c;
                 noseConeLength = c.getLength();
+                noseIgnoreSet = Collections.singleton((RocketComponent) c);
                 break;
             }
         }
@@ -457,13 +544,13 @@ public class SimulationReplayPanel extends JPanel implements GLEventListener {
             canvas.addMouseMotionListener(orbit);
             canvas.addMouseWheelListener(buildZoomListener());
 
-            add(canvas, BorderLayout.CENTER);
+            replayArea.add(canvas, BorderLayout.CENTER);
         } catch (Throwable t) {
             log.error("Failed to initialize 3D replay canvas", t);
             canvas = null;
             JLabel error = new JLabel("Unable to load 3D libraries: " + t.getMessage());
             error.setForeground(Color.RED);
-            add(error, BorderLayout.CENTER);
+            replayArea.add(error, BorderLayout.CENTER);
         }
     }
 
@@ -524,12 +611,108 @@ public class SimulationReplayPanel extends JPanel implements GLEventListener {
         left.add(resetViewButton);
         left.add(hint);
 
+        // Right-hand view buttons: fullscreen the 3D viewer and expand/collapse telemetry.
+        JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
+        right.setBackground(Color.BLACK);
+
+        fullscreenButton = new JButton("Fullscreen");
+        styleButton(fullscreenButton);
+        fullscreenButton.setToolTipText("Fullscreen the 3D viewer (Esc to exit)");
+        fullscreenButton.addActionListener(e -> toggleFullscreen());
+        right.add(fullscreenButton);
+
+        if (frameCount > 0) {
+            telemetryToggleButton = new JButton("Hide telemetry");
+            styleButton(telemetryToggleButton);
+            telemetryToggleButton.setToolTipText("Show or hide the Mission Control telemetry panel");
+            telemetryToggleButton.addActionListener(e -> setTelemetryExpanded(!telemetryExpanded));
+            right.add(telemetryToggleButton);
+        }
+
         bar.add(left, BorderLayout.WEST);
         bar.add(timeSlider, BorderLayout.CENTER);
+        bar.add(right, BorderLayout.EAST);
 
-        add(bar, BorderLayout.SOUTH);
+        replayArea.add(bar, BorderLayout.SOUTH);
 
         playbackTimer = new Timer(16, e -> tickPlayback());
+    }
+
+    // ---- View toggles ------------------------------------------------------
+
+    /** Expands or collapses the Mission Control telemetry panel by sliding the divider. */
+    private void setTelemetryExpanded(boolean expand) {
+        if (mainSplit == null || telemetryPanel == null || expand == telemetryExpanded) {
+            return;
+        }
+        if (expand) {
+            telemetryPanel.setVisible(true);
+            mainSplit.setDividerLocation(lastDividerLocation);
+        } else {
+            lastDividerLocation = mainSplit.getDividerLocation();
+            mainSplit.setDividerLocation(mainSplit.getWidth() - mainSplit.getDividerSize());
+            telemetryPanel.setVisible(false);
+        }
+        telemetryExpanded = expand;
+        if (telemetryToggleButton != null) {
+            telemetryToggleButton.setText(expand ? "Hide telemetry" : "Show telemetry");
+        }
+        mainSplit.revalidate();
+        mainSplit.repaint();
+    }
+
+    /**
+     * Toggles a fullscreen 3D viewer.  Entering collapses the telemetry panel so the 3D
+     * view dominates, then uses exclusive fullscreen where supported (falling back to a
+     * maximised borderless window).  Esc or the button restores the previous layout.
+     */
+    private void toggleFullscreen() {
+        Window window = SwingUtilities.getWindowAncestor(this);
+        if (window == null) {
+            return;
+        }
+        GraphicsDevice device = window.getGraphicsConfiguration().getDevice();
+        fullscreen = !fullscreen;
+
+        if (fullscreen) {
+            telemetryExpandedBeforeFullscreen = telemetryExpanded;
+            setTelemetryExpanded(false);
+            fullscreenButton.setText("Exit fullscreen");
+            if (device.isFullScreenSupported()) {
+                try {
+                    device.setFullScreenWindow(window);
+                } catch (RuntimeException ex) {
+                    log.warn("Exclusive fullscreen failed; using maximised window", ex);
+                    manualFullscreen(window, true);
+                }
+            } else {
+                manualFullscreen(window, true);
+            }
+        } else {
+            fullscreenButton.setText("Fullscreen");
+            if (device.getFullScreenWindow() == window) {
+                device.setFullScreenWindow(null);
+            } else {
+                manualFullscreen(window, false);
+            }
+            if (telemetryExpandedBeforeFullscreen) {
+                setTelemetryExpanded(true);
+            }
+        }
+        window.validate();
+        requestRepaint();
+    }
+
+    /** Borderless maximised-window fallback when exclusive fullscreen is unavailable. */
+    private void manualFullscreen(Window window, boolean enter) {
+        if (enter) {
+            savedWindowBounds = window.getBounds();
+            window.setBounds(window.getGraphicsConfiguration().getBounds());
+            window.toFront();
+        } else if (savedWindowBounds != null) {
+            window.setBounds(savedWindowBounds);
+            savedWindowBounds = null;
+        }
     }
 
     private static void styleButton(JButton btn) {
@@ -596,7 +779,50 @@ public class SimulationReplayPanel extends JPanel implements GLEventListener {
         if (miniRocketView != null) {
             miniRocketView.repaint();
         }
+        if (telemetryPanel != null && frameCount > 0 && currentFrame < times.length) {
+            telemetryPanel.setTime(times[currentFrame]);
+        }
         requestRepaint();
+    }
+
+    /**
+     * Seeks the replay (and everything synced to it) to an absolute sim time, driven by
+     * the telemetry timeline.  Scrubbing pauses playback, exactly like dragging the
+     * time slider, so the cursor follows the user's hand.
+     */
+    void seekToTime(double time) {
+        if (frameCount == 0) {
+            return;
+        }
+        if (playing) {
+            togglePlayback();   // pause; the user is now scrubbing manually
+        }
+        currentFrame = frameAtTime(time);
+        simulationTime = times[currentFrame];
+        // Reflect the new position on the slider; its change listener calls refreshFrame.
+        if (timeSlider.getValue() != currentFrame) {
+            timeSlider.setValue(currentFrame);
+        } else {
+            refreshFrame();
+        }
+    }
+
+    /** Index of the latest branch-0 sample at or before the given absolute sim time. */
+    private int frameAtTime(double time) {
+        if (times.length == 0) {
+            return 0;
+        }
+        if (time <= times[0]) {
+            return 0;
+        }
+        if (time >= times[times.length - 1]) {
+            return times.length - 1;
+        }
+        int i = Arrays.binarySearch(times, time);
+        if (i >= 0) {
+            return i;
+        }
+        return Math.max(0, -i - 2);
     }
 
     private void requestRepaint() {
@@ -704,6 +930,10 @@ public class SimulationReplayPanel extends JPanel implements GLEventListener {
     public void init(GLAutoDrawable drawable) {
         GL2 gl = drawable.getGL().getGL2();
 
+        if (quadric == null) {
+            quadric = glu.gluNewQuadric();
+        }
+
         gl.glEnable(GL.GL_DEPTH_TEST);
         gl.glEnable(GL.GL_CULL_FACE);
         gl.glShadeModel(GL2.GL_SMOOTH);
@@ -753,7 +983,6 @@ public class SimulationReplayPanel extends JPanel implements GLEventListener {
         if (frameCount == 0) return;
 
         GL2 gl = drawable.getGL().getGL2();
-        GLU glu = new GLU();
 
         int w = drawable.getSurfaceWidth();
         int h = drawable.getSurfaceHeight();
@@ -834,6 +1063,10 @@ public class SimulationReplayPanel extends JPanel implements GLEventListener {
         if (sandTextureId != 0) {
             gl.glDeleteTextures(1, new int[]{ sandTextureId }, 0);
             sandTextureId = 0;
+        }
+        if (quadric != null) {
+            glu.gluDeleteQuadric(quadric);
+            quadric = null;
         }
         if (renderer != null) {
             renderer.dispose(drawable);
@@ -1021,8 +1254,6 @@ public class SimulationReplayPanel extends JPanel implements GLEventListener {
 
     /** Draws a simple cylinder + nose body (nose along +X) for a separated stage. */
     private void drawSimpleRocket(GL2 gl) {
-        GLU glu = new GLU();
-        com.jogamp.opengl.glu.GLUquadric q = glu.gluNewQuadric();
         double r = rocketRadius;
         double len = rocketLength * 0.5;
 
@@ -1033,13 +1264,12 @@ public class SimulationReplayPanel extends JPanel implements GLEventListener {
         gl.glPushMatrix();
         // GLU draws cylinders along +Z; rotate so the body lies along +X (rocket axis).
         gl.glRotated(90, 0, 1, 0);
-        glu.gluCylinder(q, r, r, len, 16, 1);
+        glu.gluCylinder(quadric, r, r, len, 16, 1);
         gl.glTranslated(0, 0, len);
-        glu.gluCylinder(q, r, 0.0, r * 3.0, 16, 1); // nose
+        glu.gluCylinder(quadric, r, 0.0, r * 3.0, 16, 1); // nose
         gl.glPopMatrix();
 
         gl.glDisable(GL2.GL_COLOR_MATERIAL);
-        glu.gluDeleteQuadric(q);
     }
 
     /**
@@ -1125,8 +1355,7 @@ public class SimulationReplayPanel extends JPanel implements GLEventListener {
                 gl.glScaled(1.0, 1.0, -1.0);
                 gl.glFrontFace(GL.GL_CW);
                 gl.glTranslated(-rocketLength, 0, 0);
-                renderer.render(drawable, renderConfig, Collections.emptySet(),
-                        Collections.singleton((RocketComponent) noseConeComp));
+                renderer.render(drawable, renderConfig, Collections.emptySet(), noseIgnoreSet);
                 gl.glFrontFace(GL.GL_CCW);
                 gl.glPopMatrix();
                 drawn = true;
@@ -1198,23 +1427,20 @@ public class SimulationReplayPanel extends JPanel implements GLEventListener {
 
     /** Draws the airframe hanging tail-down: a body tube from y=0 (tail) up to y=L (open top). */
     private void drawHangingBody(GL2 gl, double r, double L) {
-        GLU glu = new GLU();
-        com.jogamp.opengl.glu.GLUquadric q = glu.gluNewQuadric();
-
         gl.glEnable(GL2.GL_COLOR_MATERIAL);
         gl.glColorMaterial(GL.GL_FRONT_AND_BACK, GL2.GL_AMBIENT_AND_DIFFUSE);
 
         gl.glPushMatrix();
         gl.glRotated(-90, 1, 0, 0); // GLU +Z axis -> world +Y (up)
         gl.glColor3f(0.86f, 0.87f, 0.90f); // light airframe
-        glu.gluCylinder(q, r, r, L, 20, 1);
+        glu.gluCylinder(quadric, r, r, L, 20, 1);
         // Closed tail cap at the bottom.
         gl.glColor3f(0.78f, 0.79f, 0.82f);
-        glu.gluDisk(q, 0, r, 20, 1);
+        glu.gluDisk(quadric, 0, r, 20, 1);
         // Dark rim at the open top where the nose used to sit.
         gl.glTranslated(0, 0, L);
         gl.glColor3f(0.18f, 0.18f, 0.20f);
-        glu.gluDisk(q, r * 0.55, r, 20, 1);
+        glu.gluDisk(quadric, r * 0.55, r, 20, 1);
         gl.glPopMatrix();
 
         // Three simple fins at the tail for recognisability.
@@ -1234,14 +1460,10 @@ public class SimulationReplayPanel extends JPanel implements GLEventListener {
         gl.glEnable(GL.GL_CULL_FACE);
 
         gl.glDisable(GL2.GL_COLOR_MATERIAL);
-        glu.gluDeleteQuadric(q);
     }
 
     /** Draws the popped-off nose cone dangling tip-down, base (shoulder) at (nx, nTop, 0). */
     private void drawPoppedNose(GL2 gl, double nx, double nTop, double r, double noseLen) {
-        GLU glu = new GLU();
-        com.jogamp.opengl.glu.GLUquadric q = glu.gluNewQuadric();
-
         gl.glEnable(GL2.GL_COLOR_MATERIAL);
         gl.glColorMaterial(GL.GL_FRONT_AND_BACK, GL2.GL_AMBIENT_AND_DIFFUSE);
         gl.glColor3f(0.85f, 0.20f, 0.18f); // red nose
@@ -1249,12 +1471,11 @@ public class SimulationReplayPanel extends JPanel implements GLEventListener {
         gl.glPushMatrix();
         gl.glTranslated(nx, nTop, 0);
         gl.glRotated(90, 1, 0, 0); // GLU +Z axis -> world -Y (tip points down)
-        glu.gluCylinder(q, r, 0.0, noseLen, 16, 1);
-        glu.gluDisk(q, 0, r, 16, 1); // shoulder cap
+        glu.gluCylinder(quadric, r, 0.0, noseLen, 16, 1);
+        glu.gluDisk(quadric, 0, r, 16, 1); // shoulder cap
         gl.glPopMatrix();
 
         gl.glDisable(GL2.GL_COLOR_MATERIAL);
-        glu.gluDeleteQuadric(q);
     }
 
     // ---- Scene helpers -----------------------------------------------------
@@ -1308,10 +1529,8 @@ public class SimulationReplayPanel extends JPanel implements GLEventListener {
      */
     private void drawSun(GL2 gl, double ex, double ey, double ez,
                          double tx, double ty, double tz, double far) {
-        // Normalised sun direction.
-        double sl = Math.sqrt(SUN_DIRECTION[0] * SUN_DIRECTION[0]
-                + SUN_DIRECTION[1] * SUN_DIRECTION[1] + SUN_DIRECTION[2] * SUN_DIRECTION[2]);
-        double sdx = SUN_DIRECTION[0] / sl, sdy = SUN_DIRECTION[1] / sl, sdz = SUN_DIRECTION[2] / sl;
+        // Normalised sun direction (precomputed; SUN_DIRECTION is constant).
+        double sdx = SUN_DIR_NX, sdy = SUN_DIR_NY, sdz = SUN_DIR_NZ;
 
         double dist = far * 0.82;
         double sx = ex + sdx * dist, sy = ey + sdy * dist, sz = ez + sdz * dist;
@@ -1577,17 +1796,22 @@ public class SimulationReplayPanel extends JPanel implements GLEventListener {
     }
 
     private void drawFlightPath(GL2 gl, BranchTrack tr, double simTime, int idx) {
-        if (tr.x.length == 0) return;
+        // Draw the path flown so far from the prebuilt vertex array in one call.  The
+        // trajectory is static geometry, so emitting it per-vertex in immediate mode
+        // (a JNI crossing each) was the single biggest per-frame cost during playback.
+        int count = Math.min(tr.frameAt(simTime) + 1, tr.pathCount);
+        if (count < 2) return;
+
         gl.glDisable(GL2.GL_LIGHTING);
         gl.glLineWidth(idx == 0 ? 2.5f : 1.8f);
         if (idx == 0) gl.glColor3f(0.95f, 0.55f, 0.10f);
         else          gl.glColor3f(0.95f, 0.25f, 0.20f);
-        gl.glBegin(GL2.GL_LINE_STRIP);
-        int end = tr.frameAt(simTime);
-        for (int i = 0; i <= end && i < tr.x.length; i++) {
-            gl.glVertex3d(tr.x[i], tr.alt[i], tr.z[i]);
-        }
-        gl.glEnd();
+
+        gl.glEnableClientState(GL2.GL_VERTEX_ARRAY);
+        gl.glVertexPointer(3, GL2.GL_DOUBLE, 0, tr.pathVertices);
+        gl.glDrawArrays(GL.GL_LINE_STRIP, 0, count);
+        gl.glDisableClientState(GL2.GL_VERTEX_ARRAY);
+
         gl.glLineWidth(1.0f);
         gl.glEnable(GL2.GL_LIGHTING);
     }

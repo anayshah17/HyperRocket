@@ -59,6 +59,17 @@ public class ThermalSimulationListener extends AbstractSimulationListener {
     /** Assumed ambient start temperature (K) when atmospheric data is not yet available. */
     private static final double DEFAULT_AMBIENT_K = 293.15;
 
+    /**
+     * Fraction of the core-exhaust-to-ambient temperature rise that actually reaches a
+     * motor-mount wall.  Hobby and most amateur motors are self-contained: the propellant
+     * burns inside the motor casing and liner, so the mount tube wall sits behind that casing
+     * and a gas boundary layer and never approaches the ~2500 K core flame temperature.  This
+     * effectiveness drives the wall toward a believable adjacent-gas temperature
+     * ({@code T_ambient + ε·(T_exhaust − T_ambient)} ≈ 1000 K for a metal mount) rather than
+     * the full core flame temperature, which would otherwise over-predict thermal failure.
+     */
+    public static final double EXHAUST_WALL_COUPLING = 0.35;
+
     private double exhaustTempK = DEFAULT_EXHAUST_TEMP_K;
 
     /** Temperature of each component in K, updated every step. */
@@ -142,7 +153,7 @@ public class ThermalSimulationListener extends AbstractSimulationListener {
      * @param motorOn     true while a motor is burning
      * @return updated temperature (K)
      */
-    private double updateTemperature(ExternalComponent ext, Material mat,
+    double updateTemperature(ExternalComponent ext, Material mat,
             double currentTemp, double airTemp, double dt, boolean motorOn) {
         double mass = ext.getComponentMass();
         if (mass <= 0) {
@@ -150,7 +161,12 @@ public class ThermalSimulationListener extends AbstractSimulationListener {
         }
 
         double contactArea = computeExhaustContactArea(ext);
-        double sourceTemp = motorOn ? exhaustTempK : airTemp;
+        // While the motor burns, the wall is driven toward the gas adjacent to it, not the
+        // full core flame temperature (see EXHAUST_WALL_COUPLING).  Off the motor it relaxes
+        // toward ambient air.
+        double sourceTemp = motorOn
+                ? airTemp + EXHAUST_WALL_COUPLING * (exhaustTempK - airTemp)
+                : airTemp;
 
         // Closed-form (analytic) solution of  dT/dt = k·(T_src − T)  over the step,
         // with k = h·A / (m·cp).  Unlike explicit forward-Euler this is unconditionally
