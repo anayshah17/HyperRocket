@@ -45,6 +45,19 @@ public class PinkNoiseWindModel implements WindModel {
 	/** Time difference between random samples. */
 	public static final double DELTA_T = 0.05;
 
+	/**
+	 * Mean wind speed (m/s) below which turbulence is faded out.  Turbulence
+	 * intensity is physically defined as (standard deviation / mean speed), so it is
+	 * undefined in dead-calm air.  Pink noise has heavy low-frequency power, so a
+	 * non-zero standard deviation applied at (near-)zero mean speed behaves like a
+	 * phantom steady breeze along the wind axis, which a slow parachute descent
+	 * integrates into a large, always-same-direction horizontal drift.  Fading the
+	 * turbulence to zero as the mean speed approaches calm removes that artifact while
+	 * leaving all normal (mean &ge; {@code CALM_TURBULENCE_THRESHOLD}) flights
+	 * bit-for-bit unchanged.
+	 */
+	private static final double CALM_TURBULENCE_THRESHOLD = 0.5;
+
 	private double average = 0;
 	private double direction = Math.PI / 2; // this is an East wind
 	private double standardDeviation = 0;
@@ -213,9 +226,30 @@ public class PinkNoiseWindModel implements WindModel {
 
 		double a = (time - time1) / DELTA_T;
 
-		double speed = average + (value1 * (1 - a) + value2 * a) * standardDeviation / STDDEV;
+		// Fade turbulence out as the mean wind approaches calm (see CALM_TURBULENCE_THRESHOLD).
+		// For mean speeds at or above the threshold this factor is exactly 1, so normal
+		// flights are unaffected; only (near-)dead-calm air loses the phantom-breeze drift.
+		double turbScale = smoothstep(Math.abs(average) / CALM_TURBULENCE_THRESHOLD);
+
+		double fluctuation = (value1 * (1 - a) + value2 * a) * standardDeviation / STDDEV * turbScale;
+		double speed = average + fluctuation;
 		return new Coordinate(speed * Math.sin(direction), speed * Math.cos(direction), 0);
 
+	}
+
+	/**
+	 * Hermite smoothstep clamped to [0, 1]: 0 for x &le; 0, 1 for x &ge; 1, with a
+	 * smooth (continuous first-derivative) transition in between.  Used to fade
+	 * turbulence in over the near-calm mean-wind range without a hard discontinuity.
+	 */
+	private static double smoothstep(double x) {
+		if (x <= 0) {
+			return 0;
+		}
+		if (x >= 1) {
+			return 1;
+		}
+		return x * x * (3 - 2 * x);
 	}
 
 	private void reset() {

@@ -81,8 +81,12 @@ public class FlightEventsTest extends BaseTestCase {
 				new FlightEvent(FlightEvent.Type.SIM_WARN, 2.0, null, warn),
 				new FlightEvent(FlightEvent.Type.RECOVERY_DEVICE_DEPLOYMENT, 2.001, parachute),
 				new FlightEvent(FlightEvent.Type.APOGEE, 2.48, rocket),
-				new FlightEvent(FlightEvent.Type.GROUND_HIT, 42.97, null),
-				new FlightEvent(FlightEvent.Type.SIMULATION_END, 42.97, null)
+				// Ground hit at 46.81 s (was 42.97 s): the parachute here deploys at ~80 m/s
+				// (note the HighSpeedDeployment warning above), and the canopy inflation
+				// transient in BasicLandingStepper lets the rocket coast higher before the
+				// chute reaches full drag, lengthening the descent.
+				new FlightEvent(FlightEvent.Type.GROUND_HIT, 46.81, null),
+				new FlightEvent(FlightEvent.Type.SIMULATION_END, 46.81, null)
 		};
 
 		checkEvents(expectedEvents, sim, 0);

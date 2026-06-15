@@ -265,13 +265,25 @@ public abstract class RocketRenderer {
 	}
 	
 	public void render(GLAutoDrawable drawable, FlightConfiguration configuration, Set<RocketComponent> selection) {
-		
+		render(drawable, configuration, selection, java.util.Collections.emptySet());
+	}
+
+	/**
+	 * Render the configuration, skipping any component in {@code ignore} (and its motors).
+	 * Used to draw the airframe without its nose cone once it has popped off for recovery.
+	 */
+	public void render(GLAutoDrawable drawable, FlightConfiguration configuration,
+			Set<RocketComponent> selection, Set<RocketComponent> ignore) {
+
 		if (cr == null)
 			throw new IllegalStateException(this + " Not Initialized");
-		
+
 
         Collection<Geometry> geometry = getTreeGeometry( configuration);
-        
+        if (ignore != null && !ignore.isEmpty()) {
+            geometry.removeIf(g -> ignore.contains(g.getComponent()));
+        }
+
 		GL2 gl = drawable.getGL().getGL2();
 		
 		gl.glEnable(GL.GL_DEPTH_TEST); // enables depth testing

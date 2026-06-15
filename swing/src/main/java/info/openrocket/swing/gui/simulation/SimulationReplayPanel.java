@@ -54,6 +54,8 @@ import info.openrocket.core.document.OpenRocketDocument;
 import info.openrocket.core.document.Simulation;
 import info.openrocket.core.rocketcomponent.AxialStage;
 import info.openrocket.core.rocketcomponent.FlightConfiguration;
+import info.openrocket.core.rocketcomponent.NoseCone;
+import info.openrocket.core.rocketcomponent.RocketComponent;
 import info.openrocket.core.simulation.FlightData;
 import info.openrocket.core.simulation.FlightDataBranch;
 import info.openrocket.core.simulation.FlightDataType;
@@ -143,6 +145,10 @@ public class SimulationReplayPanel extends JPanel implements GLEventListener {
     private double maxAltitude = 10.0;
     private double rocketLength = 1.0;
     private double rocketRadius = 0.05;
+    /** Length of the rocket's nose cone (m), for drawing it popped off under the canopy. */
+    private double noseConeLength = 0.0;
+    /** The nose-cone component, hidden from the dangling airframe once it has popped off. */
+    private NoseCone noseConeComp = null;
 
     // Locally-generated desert ground (never null after loadFlightData).
     private TerrainFetcher.TerrainData terrain;
@@ -325,6 +331,18 @@ public class SimulationReplayPanel extends JPanel implements GLEventListener {
         rocketRadius = Math.max(rocketLength * 0.015,
                 Math.min(rocketLength * 0.25, simulation.getRocket().getBoundingRadius()));
         if (rocketRadius <= 0) rocketRadius = rocketLength * 0.05;
+
+        // Nose-cone length, for drawing it popped off and dangling under the canopy.
+        noseConeLength = 0.0;
+        noseConeComp = null;
+        for (RocketComponent c : simulation.getRocket().getAllChildren()) {
+            if (c instanceof NoseCone) {
+                noseConeComp = (NoseCone) c;
+                noseConeLength = c.getLength();
+                break;
+            }
+        }
+        if (noseConeLength <= 0) noseConeLength = rocketLength * 0.2;
 
         // Camera distance range: from right on the rocket out to the whole flight.
         minCamDist = Math.max(0.3, rocketLength * 0.6);
@@ -837,8 +855,28 @@ public class SimulationReplayPanel extends JPanel implements GLEventListener {
             return;
         }
 
+        boolean deployed = tr.isDeployedAt(simTime);
+
         gl.glPushMatrix();
         gl.glTranslated(rX, rAlt, rZ);
+
+        if (deployed) {
+            // Recovered configuration: the ejection charge has popped the nose cone off
+            // and the airframe dangles from the canopy on its shock cord, the whole
+            // assembly swinging like a pendulum (decaying amplitude) about the canopy.
+            double swingDeg = pendulumSwingDegrees(tr, simTime);
+            if (swingDeg != 0) {
+                double pivotUp = canopyCentreHeight();
+                gl.glTranslated(0, pivotUp, 0);
+                gl.glRotated(swingDeg, 0, 0, 1); // swing in the east/up plane
+                gl.glTranslated(0, -pivotUp, 0);
+            }
+            drawRecoveryAssembly(drawable, gl, tr, simTime, activeStages);
+            gl.glPopMatrix();
+            return;
+        }
+
+        gl.glPushMatrix();
         applyOrientation(gl, tr, f);
 
         gl.glScaled(1.0, 1.0, -1.0);
@@ -874,10 +912,56 @@ public class SimulationReplayPanel extends JPanel implements GLEventListener {
         gl.glFrontFace(GL.GL_CCW);
         gl.glPopMatrix();
 
-        // Parachute canopy once the recovery device has deployed.
-        if (tr.isDeployedAt(simTime)) {
-            drawParachute(gl, rX, rAlt, rZ);
+        gl.glPopMatrix();
+    }
+
+    // ---- Recovery (deployed) layout ---------------------------------------
+    //
+    // All heights are measured up (+Y) from the tracked trajectory point at the origin.
+    // The airframe hangs tail-down with its open top where the nose cone used to be; a
+    // shock cord runs up to a junction, from which the shroud lines fan out to the
+    // canopy and a second length of cord holds the popped-off nose cone alongside.
+
+    private double canopyRadius() {
+        return Math.max(rocketLength * 1.2, rocketRadius * 12.0);
+    }
+
+    /** Height of the shock-cord junction (where shroud lines and cord meet). */
+    private double cordJunctionHeight() {
+        return rocketLength + rocketLength * 0.6;
+    }
+
+    /** Height at which the canopy dome is centred (also the pendulum pivot). */
+    private double canopyCentreHeight() {
+        return cordJunctionHeight() + canopyRadius() * 1.4;
+    }
+
+    /**
+     * Decaying pendulum swing angle (degrees) for a stage hanging under its canopy,
+     * as a function of time since deployment.  Returns 0 before deployment.
+     */
+    private double pendulumSwingDegrees(BranchTrack tr, double simTime) {
+        // The canopy itself stays fairly steady (it is the top of the pendulum); the
+        // body and nose do most of the visible dangling, about the shock-cord junction.
+        return danglingSwingDeg(tr, simTime, 6.0, 3.0, 10.0, 0.0);
+    }
+
+    /**
+     * A decaying, phase-shifted swing angle (degrees) used to make hanging parts dangle
+     * loosely.  Returns 0 before deployment.  Giving each part its own amplitude, period
+     * and phase makes the airframe and nose sway on their cords with a lazy, independent
+     * lag rather than moving as one rigid body.
+     */
+    private double danglingSwingDeg(BranchTrack tr, double simTime,
+                                    double amplitude, double period, double decay, double phase) {
+        if (Double.isNaN(tr.deployTime)) {
+            return 0;
         }
+        double dt = simTime - tr.deployTime;
+        if (dt <= 0) {
+            return 0;
+        }
+        return amplitude * Math.exp(-dt / decay) * Math.cos(2 * Math.PI * dt / period + phase);
     }
 
     /** Returns the set of stage numbers this branch should render at the given time. */
@@ -958,59 +1042,219 @@ public class SimulationReplayPanel extends JPanel implements GLEventListener {
         glu.gluDeleteQuadric(q);
     }
 
-    /** Draws a classic gored parachute canopy above a deployed stage with shroud lines. */
-    private void drawParachute(GL2 gl, double rX, double rAlt, double rZ) {
-        double canopyR = Math.max(rocketLength * 1.2, rocketRadius * 12.0);
-        double hang = canopyR * 1.3;                 // canopy height above the rocket
-        double cx = rX, cy = rAlt + hang, cz = rZ;
+    /**
+     * Draws the full deployed recovery scene in the swung frame (origin at the tracked
+     * point): the airframe dangling tail-down, its nose cone popped off on the shock
+     * cord, the shock cord up to a junction, the shroud lines, and the canopy.
+     */
+    private void drawRecoveryAssembly(GLAutoDrawable drawable, GL2 gl, BranchTrack tr,
+                                      double simTime, Set<Integer> activeStages) {
+        final double L = rocketLength;
+        final double r = rocketRadius;
+        final double canopyR = canopyRadius();
+        final double jy = cordJunctionHeight();
+        final double cy = canopyCentreHeight();
+        // The open top of the airframe (where the nose used to be) is one nose-length down.
+        final double bodyTopY = Math.max(L * 0.4, L - noseConeLength);
 
+        // Where the popped nose cone hangs: off to one side, below the junction.
+        final double noseX = canopyR * 0.16;
+        final double noseTopY = jy - L * 0.2;
+
+        drawCanopyDome(gl, cy, canopyR);
+
+        // Shroud lines (canopy rim -> junction): these belong to the steady canopy.
+        gl.glDisable(GL2.GL_LIGHTING);
+        gl.glLineWidth(1.2f);
+        gl.glColor3f(0.9f, 0.9f, 0.9f);
+        gl.glBegin(GL2.GL_LINES);
+        final int slices = 16;
+        for (int s = 0; s < slices; s += 2) {
+            double a = 2 * Math.PI * s / slices;
+            gl.glVertex3d(canopyR * Math.cos(a), cy - canopyR, canopyR * Math.sin(a));
+            gl.glVertex3d(0, jy, 0);
+        }
+        gl.glEnd();
+        gl.glEnable(GL2.GL_LIGHTING);
+
+        // The airframe dangles from the junction with its own lazy swing (and a smaller
+        // out-of-plane component so it sways in a loose ellipse rather than a flat arc).
+        double bodyZ = danglingSwingDeg(tr, simTime, 11.0, 2.1, 13.0, 1.1);
+        double bodyX = danglingSwingDeg(tr, simTime, 6.0, 2.7, 13.0, 0.5);
+        gl.glPushMatrix();
+        gl.glTranslated(0, jy, 0);
+        gl.glRotated(bodyZ, 0, 0, 1);
+        gl.glRotated(bodyX, 1, 0, 0);
+        gl.glTranslated(0, -jy, 0);
+        drawShockCord(gl, 0, jy, 0, 0, bodyTopY, 0, r * 1.5);   // junction -> open body top
+        drawHangingAirframe(drawable, gl, activeStages);
+        gl.glPopMatrix();
+
+        // The lighter nose cone swings more freely, on its own phase and period.
+        double noseZ = danglingSwingDeg(tr, simTime, 26.0, 1.4, 16.0, 2.3);
+        double noseXa = danglingSwingDeg(tr, simTime, 17.0, 1.7, 16.0, 0.8);
+        gl.glPushMatrix();
+        gl.glTranslated(0, jy, 0);
+        gl.glRotated(noseZ, 0, 0, 1);
+        gl.glRotated(noseXa, 1, 0, 0);
+        gl.glTranslated(0, -jy, 0);
+        drawShockCord(gl, 0, jy, 0, noseX, noseTopY, 0, r);     // junction -> nose cone
+        drawPoppedNose(gl, noseX, noseTopY, r, noseConeLength);
+        gl.glPopMatrix();
+    }
+
+    /**
+     * Draws the airframe hanging tail-down, using the detailed rocket model with the nose
+     * cone hidden (it has popped off).  This keeps the body's exact shape continuous with
+     * the ascent rendering instead of swapping in a plain tube.  Falls back to a simple
+     * body tube when the detailed renderer is unavailable.
+     */
+    private void drawHangingAirframe(GLAutoDrawable drawable, GL2 gl, Set<Integer> activeStages) {
+        boolean drawn = false;
+        if (rendererReady && renderConfig != null && noseConeComp != null) {
+            try {
+                if (canToggleStages) {
+                    applyActiveStages(activeStages);
+                }
+                gl.glPushMatrix();
+                // Stand the model vertically with the tail at the origin and the open top
+                // (where the nose was) pointing up.  The model lies along its local +X
+                // (nose at X=0, tail at X=+L); rotating -90 about Z maps +X to world -Y, so
+                // after anchoring the tail at the origin the airframe hangs straight down.
+                gl.glRotated(-90.0, 0, 0, 1);
+                gl.glScaled(1.0, 1.0, -1.0);
+                gl.glFrontFace(GL.GL_CW);
+                gl.glTranslated(-rocketLength, 0, 0);
+                renderer.render(drawable, renderConfig, Collections.emptySet(),
+                        Collections.singleton((RocketComponent) noseConeComp));
+                gl.glFrontFace(GL.GL_CCW);
+                gl.glPopMatrix();
+                drawn = true;
+            } catch (Exception e) {
+                log.warn("Hanging airframe render failed", e);
+            }
+        }
+        if (!drawn) {
+            drawHangingBody(gl, rocketRadius, rocketLength);
+        }
+    }
+
+    /** Draws one length of dark, slightly slack shock cord between two points. */
+    private void drawShockCord(GL2 gl, double x0, double y0, double z0,
+                               double x1, double y1, double z1, double sag) {
+        gl.glDisable(GL2.GL_LIGHTING);
+        gl.glColor3f(0.13f, 0.11f, 0.09f);
+        gl.glLineWidth(1.8f);
+        drawSlackCord(gl, x0, y0, z0, x1, y1, z1, sag);
+        gl.glLineWidth(1.0f);
+        gl.glEnable(GL2.GL_LIGHTING);
+    }
+
+    /** Draws the gored hemispherical canopy dome centred at (0, cy, 0), opening downward. */
+    private void drawCanopyDome(GL2 gl, double cy, double canopyR) {
         gl.glEnable(GL2.GL_COLOR_MATERIAL);
         gl.glColorMaterial(GL.GL_FRONT_AND_BACK, GL2.GL_AMBIENT_AND_DIFFUSE);
         gl.glDisable(GL.GL_CULL_FACE);
 
         final int slices = 16;
         final int stacks = 6;
-        // Hemisphere dome opening downward, alternating coloured gores.
         for (int s = 0; s < slices; s++) {
             double a0 = 2 * Math.PI * s / slices;
             double a1 = 2 * Math.PI * (s + 1) / slices;
-            boolean red = (s % 2) == 0;
-            if (red) gl.glColor3f(0.85f, 0.18f, 0.18f);
-            else     gl.glColor3f(0.95f, 0.95f, 0.95f);
+            if ((s % 2) == 0) gl.glColor3f(0.85f, 0.18f, 0.18f);
+            else              gl.glColor3f(0.95f, 0.95f, 0.95f);
 
             gl.glBegin(GL2.GL_QUAD_STRIP);
             for (int k = 0; k <= stacks; k++) {
-                double ph = (Math.PI / 2.0) * k / stacks; // 0 at top → PI/2 at rim
+                double ph = (Math.PI / 2.0) * k / stacks; // 0 at top -> PI/2 at rim
                 double y = Math.cos(ph) * canopyR;
                 double rr = Math.sin(ph) * canopyR;
-                double nx0 = Math.sin(ph) * Math.cos(a0);
-                double nz0 = Math.sin(ph) * Math.sin(a0);
-                gl.glNormal3d(nx0, Math.cos(ph), nz0);
-                gl.glVertex3d(cx + rr * Math.cos(a0), cy - canopyR + y, cz + rr * Math.sin(a0));
-                double nx1 = Math.sin(ph) * Math.cos(a1);
-                double nz1 = Math.sin(ph) * Math.sin(a1);
-                gl.glNormal3d(nx1, Math.cos(ph), nz1);
-                gl.glVertex3d(cx + rr * Math.cos(a1), cy - canopyR + y, cz + rr * Math.sin(a1));
+                gl.glNormal3d(Math.sin(ph) * Math.cos(a0), Math.cos(ph), Math.sin(ph) * Math.sin(a0));
+                gl.glVertex3d(rr * Math.cos(a0), cy - canopyR + y, rr * Math.sin(a0));
+                gl.glNormal3d(Math.sin(ph) * Math.cos(a1), Math.cos(ph), Math.sin(ph) * Math.sin(a1));
+                gl.glVertex3d(rr * Math.cos(a1), cy - canopyR + y, rr * Math.sin(a1));
             }
             gl.glEnd();
         }
 
-        // Shroud lines from the canopy rim down to the rocket.
-        gl.glDisable(GL2.GL_LIGHTING);
-        gl.glColor3f(0.9f, 0.9f, 0.9f);
-        gl.glLineWidth(1.2f);
-        gl.glBegin(GL2.GL_LINES);
-        for (int s = 0; s < slices; s += 2) {
-            double a = 2 * Math.PI * s / slices;
-            gl.glVertex3d(cx + canopyR * Math.cos(a), cy - canopyR, cz + canopyR * Math.sin(a));
-            gl.glVertex3d(rX, rAlt + rocketLength * 0.4, rZ);
-        }
-        gl.glEnd();
-        gl.glLineWidth(1.0f);
-        gl.glEnable(GL2.GL_LIGHTING);
-
         gl.glEnable(GL.GL_CULL_FACE);
         gl.glDisable(GL2.GL_COLOR_MATERIAL);
+    }
+
+    /** Draws a slightly sagging cord between two points (a shallow catenary in -Y). */
+    private void drawSlackCord(GL2 gl, double x0, double y0, double z0,
+                               double x1, double y1, double z1, double sag) {
+        final int seg = 10;
+        gl.glBegin(GL2.GL_LINE_STRIP);
+        for (int i = 0; i <= seg; i++) {
+            double t = (double) i / seg;
+            double x = x0 + (x1 - x0) * t;
+            double y = y0 + (y1 - y0) * t - sag * Math.sin(Math.PI * t);
+            double z = z0 + (z1 - z0) * t;
+            gl.glVertex3d(x, y, z);
+        }
+        gl.glEnd();
+    }
+
+    /** Draws the airframe hanging tail-down: a body tube from y=0 (tail) up to y=L (open top). */
+    private void drawHangingBody(GL2 gl, double r, double L) {
+        GLU glu = new GLU();
+        com.jogamp.opengl.glu.GLUquadric q = glu.gluNewQuadric();
+
+        gl.glEnable(GL2.GL_COLOR_MATERIAL);
+        gl.glColorMaterial(GL.GL_FRONT_AND_BACK, GL2.GL_AMBIENT_AND_DIFFUSE);
+
+        gl.glPushMatrix();
+        gl.glRotated(-90, 1, 0, 0); // GLU +Z axis -> world +Y (up)
+        gl.glColor3f(0.86f, 0.87f, 0.90f); // light airframe
+        glu.gluCylinder(q, r, r, L, 20, 1);
+        // Closed tail cap at the bottom.
+        gl.glColor3f(0.78f, 0.79f, 0.82f);
+        glu.gluDisk(q, 0, r, 20, 1);
+        // Dark rim at the open top where the nose used to sit.
+        gl.glTranslated(0, 0, L);
+        gl.glColor3f(0.18f, 0.18f, 0.20f);
+        glu.gluDisk(q, r * 0.55, r, 20, 1);
+        gl.glPopMatrix();
+
+        // Three simple fins at the tail for recognisability.
+        gl.glDisable(GL.GL_CULL_FACE);
+        gl.glColor3f(0.80f, 0.30f, 0.12f);
+        double finH = L * 0.18, finC = L * 0.16;
+        gl.glBegin(GL2.GL_TRIANGLES);
+        for (int i = 0; i < 3; i++) {
+            double a = 2 * Math.PI * i / 3;
+            double cxv = Math.cos(a), czv = Math.sin(a);
+            gl.glNormal3d(-czv, 0, cxv);
+            gl.glVertex3d(r * cxv, finC, r * czv);
+            gl.glVertex3d(r * cxv, 0, r * czv);
+            gl.glVertex3d((r + finH) * cxv, 0, (r + finH) * czv);
+        }
+        gl.glEnd();
+        gl.glEnable(GL.GL_CULL_FACE);
+
+        gl.glDisable(GL2.GL_COLOR_MATERIAL);
+        glu.gluDeleteQuadric(q);
+    }
+
+    /** Draws the popped-off nose cone dangling tip-down, base (shoulder) at (nx, nTop, 0). */
+    private void drawPoppedNose(GL2 gl, double nx, double nTop, double r, double noseLen) {
+        GLU glu = new GLU();
+        com.jogamp.opengl.glu.GLUquadric q = glu.gluNewQuadric();
+
+        gl.glEnable(GL2.GL_COLOR_MATERIAL);
+        gl.glColorMaterial(GL.GL_FRONT_AND_BACK, GL2.GL_AMBIENT_AND_DIFFUSE);
+        gl.glColor3f(0.85f, 0.20f, 0.18f); // red nose
+
+        gl.glPushMatrix();
+        gl.glTranslated(nx, nTop, 0);
+        gl.glRotated(90, 1, 0, 0); // GLU +Z axis -> world -Y (tip points down)
+        glu.gluCylinder(q, r, 0.0, noseLen, 16, 1);
+        glu.gluDisk(q, 0, r, 16, 1); // shoulder cap
+        gl.glPopMatrix();
+
+        gl.glDisable(GL2.GL_COLOR_MATERIAL);
+        glu.gluDeleteQuadric(q);
     }
 
     // ---- Scene helpers -----------------------------------------------------

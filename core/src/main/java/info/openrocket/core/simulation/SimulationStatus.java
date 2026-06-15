@@ -99,6 +99,9 @@ public class SimulationStatus implements Cloneable, Monitorable {
 	/** Contains a list of deployed recovery devices. */
 	private final MonitorableSet<RecoveryDevice> deployedRecoveryDevices = new MonitorableSet<>();
 
+	/** Simulation time (s) at which each recovery device deployed, for the inflation transient. */
+	private final Map<RecoveryDevice, Double> recoveryDeviceDeploymentTimes = new HashMap<>();
+
 	/** The flight event queue */
 	private final EventQueue eventQueue = new EventQueue();
 
@@ -210,6 +213,9 @@ public class SimulationStatus implements Cloneable, Monitorable {
 
 		this.deployedRecoveryDevices.clear();
 		this.deployedRecoveryDevices.addAll(orig.deployedRecoveryDevices);
+
+		this.recoveryDeviceDeploymentTimes.clear();
+		this.recoveryDeviceDeploymentTimes.putAll(orig.recoveryDeviceDeploymentTimes);
 
 		this.motorStateList.clear();
 		this.motorStateList.addAll(orig.motorStateList);
@@ -437,6 +443,24 @@ public class SimulationStatus implements Cloneable, Monitorable {
 
 	public Set<RecoveryDevice> getDeployedRecoveryDevices() {
 		return deployedRecoveryDevices;
+	}
+
+	/**
+	 * Record the simulation time at which a recovery device deployed.  Used to model
+	 * the canopy inflation transient (drag ramps up over a short time after deployment
+	 * rather than appearing instantly).  The first deployment time for a device is kept.
+	 */
+	public void setRecoveryDeviceDeploymentTime(RecoveryDevice device, double time) {
+		recoveryDeviceDeploymentTimes.putIfAbsent(device, time);
+	}
+
+	/**
+	 * @return the simulation time (s) at which the given device deployed, or
+	 *         {@code NaN} if it has not deployed.
+	 */
+	public double getRecoveryDeviceDeploymentTime(RecoveryDevice device) {
+		Double t = recoveryDeviceDeploymentTimes.get(device);
+		return t == null ? Double.NaN : t;
 	}
 
 	public void setWarnings(WarningSet warnings) {

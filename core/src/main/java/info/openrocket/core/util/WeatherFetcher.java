@@ -28,7 +28,7 @@ import com.google.gson.JsonSyntaxException;
  * can gracefully fall back to the configured wind model.
  * <p>
  * The surface wind from the NOAA hourly forecast is extended to altitude using
- * the Hellmann power-law profile (α = 1/7, open terrain).
+ * the Hellmann power-law profile (alpha = 1/7, open terrain).
  */
 public final class WeatherFetcher {
 
@@ -493,7 +493,7 @@ public final class WeatherFetcher {
 
     /**
      * Builds altitude-varying wind profile using the Hellmann power-law:
-     * {@code v(z) = v_ref × (z / z_ref)^α}.
+     * {@code v(z) = v_ref * (z / z_ref)^alpha}.
      */
     private static List<WeatherLevel> buildWindProfile(double surfaceSpeedMps, double dirRad) {
         List<WeatherLevel> levels = new ArrayList<>(PROFILE_ALTITUDES_M.length);

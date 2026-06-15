@@ -17,10 +17,18 @@ import info.openrocket.core.simulation.exception.SimulationException;
  *   <li>Compares the deployment velocity against {@link RecoveryDevice#getMaxDeploymentVelocity()};
  *       fires {@link FlightEvent.Type#PARACHUTE_FAILURE} if the limit is exceeded.</li>
  *   <li>Estimates the opening shock force and compares it against
- *       {@link RecoveryDevice#getShroudLineStrength()} × line count;
+ *       {@link RecoveryDevice#getShroudLineStrength()} times the line count;
  *       fires {@link FlightEvent.Type#PARACHUTE_FAILURE} if the lines would snap.</li>
  * </ol>
- * Fields with value 0 are treated as "not specified" and the corresponding check is skipped.
+ * Fields with value 0 are treated as "not specified" and the corresponding check is skipped,
+ * so a stock device that sets neither limit never fails and always deploys normally.
+ * <p>
+ * When the user HAS set a limit and it is exceeded, the device is treated as physically
+ * destroyed: a {@link FlightEvent.Type#PARACHUTE_FAILURE} event and a warning are raised,
+ * and the deployment is vetoed (this listener returns {@code false}).  Vetoing keeps the
+ * device out of the deployed-device set, so it contributes no drag and the rocket comes in
+ * ballistically -- a "failed" parachute no longer lowers the rocket gently in contradiction
+ * of its own warning.
  */
 public class RecoveryIntegrityListener extends AbstractSimulationListener {
 
@@ -35,31 +43,36 @@ public class RecoveryIntegrityListener extends AbstractSimulationListener {
             airDensity = 1.225; // ISA sea-level fallback
         }
 
-        checkVelocityLimit(status, device, velocity);
-        checkShockLoad(status, device, velocity, airDensity);
+        boolean failed = checkVelocityLimit(status, device, velocity);
+        failed |= checkShockLoad(status, device, velocity, airDensity);
 
-        return true;
+        // Veto deployment on failure so the destroyed device provides no drag.
+        return !failed;
     }
 
-    private void checkVelocityLimit(SimulationStatus status, RecoveryDevice device, double velocity)
+    /** @return {@code true} if the device failed (deployment velocity exceeded). */
+    private boolean checkVelocityLimit(SimulationStatus status, RecoveryDevice device, double velocity)
             throws SimulationException {
         double limit = device.getMaxDeploymentVelocity();
         if (limit <= 0) {
-            return;
+            return false;
         }
         if (velocity > limit) {
             String reason = String.format("%.1f m/s > %.1f m/s limit", velocity, limit);
             status.addWarning(new Warning.ParachuteFailure(device, reason));
             status.addEvent(new FlightEvent(FlightEvent.Type.PARACHUTE_FAILURE,
                     status.getSimulationTime(), device, velocity));
+            return true;
         }
+        return false;
     }
 
-    private void checkShockLoad(SimulationStatus status, RecoveryDevice device,
+    /** @return {@code true} if the device failed (shroud lines snapped under opening shock). */
+    private boolean checkShockLoad(SimulationStatus status, RecoveryDevice device,
             double velocity, double airDensity) throws SimulationException {
         double lineStrength = device.getShroudLineStrength();
         if (lineStrength <= 0) {
-            return;
+            return false;
         }
 
         double cd = device.getCD();
@@ -78,7 +91,9 @@ public class RecoveryIntegrityListener extends AbstractSimulationListener {
             status.addWarning(new Warning.ParachuteFailure(device, reason));
             status.addEvent(new FlightEvent(FlightEvent.Type.PARACHUTE_FAILURE,
                     status.getSimulationTime(), device, shockForce));
+            return true;
         }
+        return false;
     }
 
     private static double safeGet(FlightDataBranch branch, FlightDataType type) {

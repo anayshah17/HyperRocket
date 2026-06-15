@@ -25,7 +25,7 @@ import info.openrocket.core.simulation.exception.SimulationException;
  * A lumped-mass heat transfer model is used:
  * <pre>
  *   Q  = h × A_contact × (T_exhaust − T_component)     [W]
- *   ΔT = Q × Δt / (m × cp)                              [K per step]
+ *   dT = Q × dt / (m × cp)                              [K per step]
  * </pre>
  * where {@code h} is the convective coefficient ({@value #CONVECTIVE_COEFF} W/m²·K),
  * {@code A_contact} is the inner surface area of the BodyTube exposed to exhaust,

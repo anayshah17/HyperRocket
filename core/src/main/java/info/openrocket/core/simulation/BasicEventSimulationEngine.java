@@ -602,6 +602,7 @@ public class BasicEventSimulationEngine implements SimulationEngine {
 
 					currentStatus.setLiftoff(true);
 					currentStatus.getDeployedRecoveryDevices().add((RecoveryDevice) c);
+					currentStatus.setRecoveryDeviceDeploymentTime((RecoveryDevice) c, currentStatus.getSimulationTime());
 
 					// If we haven't already reached apogee, then we need to compute the actual coast time
 					// to determine the optimum altitude.
