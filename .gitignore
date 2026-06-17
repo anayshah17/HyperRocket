@@ -120,3 +120,6 @@ docs/build
 
 # Built distributable (packaged HyperRocket app/runtime; too large for git)
 /HyperRocket
+
+# Windows installer output (built by packaging/windows/build-installer.bat)
+/dist-installer

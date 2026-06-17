@@ -1,0 +1,62 @@
+# HyperRocket Windows Installer
+
+This folder packages HyperRocket as a **native Windows installer** (`.exe`) with a
+standard installation wizard: welcome screen, license agreement, install-location
+chooser, Start-menu / desktop-shortcut options, an install progress bar, and a
+finish page. Once installed, HyperRocket behaves like any other Windows program —
+launch it from the Start menu or desktop, and uninstall it from
+*Settings → Apps*.
+
+The installer is produced by the JDK's [`jpackage`](https://docs.oracle.com/en/java/javase/17/docs/specs/man/jpackage.html)
+tool, which bundles a private Java runtime so end users **do not need Java
+installed**.
+
+## Build it yourself (locally)
+
+**Requirements**
+
+| Tool | How to get it |
+|------|---------------|
+| JDK 17 (with `jpackage`) | https://adoptium.net (Temurin 17) |
+| WiX Toolset v3.x | `winget install WiXToolset.WiXToolset` |
+
+**Build**
+
+From the repository root:
+
+```bat
+packaging\windows\build-installer.bat 1.0.0
+```
+
+The script builds the distributable jar (`gradlew dist`) if needed, then runs
+`jpackage`. The finished installer is written to:
+
+```
+dist-installer\HyperRocket-1.0.0.exe
+```
+
+> `dist-installer/` is git-ignored — the installer is ~100 MB and is published as a
+> GitHub Release asset rather than committed to the repository.
+
+## Automatic builds (GitHub Actions)
+
+The workflow [`.github/workflows/windows-installer.yml`](../../.github/workflows/windows-installer.yml)
+builds the installer in CI and **attaches it to a GitHub Release**:
+
+* **On a version tag** — push a tag like `v1.0.0` and the workflow builds the
+  installer and uploads it to the matching Release automatically:
+
+  ```bash
+  git tag v1.0.0
+  git push origin v1.0.0
+  ```
+
+* **Manually** — go to the repo's *Actions → Windows Installer → Run workflow*,
+  enter a version, and download the installer from the run's artifacts.
+
+## What the installer does
+
+* Installs HyperRocket + a bundled Java 17 runtime under the chosen directory
+  (default `C:\Program Files\HyperRocket`, or per-user if selected in the wizard).
+* Creates Start-menu and (optionally) desktop shortcuts using the HyperRocket icon.
+* Registers an uninstaller in *Apps & features*.

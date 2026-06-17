@@ -1,0 +1,102 @@
+name: Windows Installer
+
+# Builds the HyperRocket Windows installer (.exe) with jpackage + WiX, and
+# attaches it to a GitHub Release whenever a version tag (e.g. v1.0.0) is pushed.
+# Can also be run manually from the Actions tab via "Run workflow".
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Installer version (e.g. 1.0.0)'
+        required: false
+        default: '1.0.0'
+
+permissions:
+  contents: write
+
+jobs:
+  installer:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository and submodules
+        uses: actions/checkout@v5
+        with:
+          submodules: 'recursive'
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v5
+
+      - name: Build distributable jar
+        run: ./gradlew dist
+
+      - name: Ensure WiX Toolset v3 is installed
+        shell: pwsh
+        run: |
+          if (-not (Get-ChildItem 'C:\Program Files (x86)\WiX Toolset v3*\bin\candle.exe' -ErrorAction SilentlyContinue)) {
+            choco install wixtoolset --no-progress -y
+          }
+
+      - name: Add WiX to PATH
+        shell: pwsh
+        run: |
+          $bin = Get-ChildItem 'C:\Program Files (x86)\WiX Toolset v3*\bin' -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($bin) { $bin.FullName | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8 }
+
+      - name: Determine version
+        id: version
+        shell: bash
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            v="${GITHUB_REF_NAME#v}"
+          else
+            v="${{ github.event.inputs.version }}"
+          fi
+          echo "version=${v:-1.0.0}" >> "$GITHUB_OUTPUT"
+
+      - name: Build Windows installer
+        shell: pwsh
+        run: |
+          $jar = Get-ChildItem build/libs/OpenRocket-*.jar | Select-Object -First 1
+          if (-not $jar) { throw "No OpenRocket jar found in build/libs" }
+          jpackage `
+            --type exe `
+            --name HyperRocket `
+            --app-version "${{ steps.version.outputs.version }}" `
+            --vendor "HyperRocket" `
+            --description "HyperRocket - model rocket design and flight simulator" `
+            --input build/libs `
+            --main-jar $jar.Name `
+            --main-class info.openrocket.swing.startup.OpenRocket `
+            --icon swing/src/main/resources/pix/icon/icon-windows.ico `
+            --license-file LICENSE.TXT `
+            --java-options "-Xmx2048m" `
+            --win-dir-chooser `
+            --win-menu `
+            --win-menu-group HyperRocket `
+            --win-shortcut `
+            --win-shortcut-prompt `
+            --dest dist-installer
+
+      - name: Upload installer as build artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: HyperRocket-Windows-Installer
+          path: dist-installer/*.exe
+
+      - name: Publish installer to GitHub Release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist-installer/*.exe
+          generate_release_notes: true
