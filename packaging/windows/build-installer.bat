@@ -29,8 +29,9 @@ set "DEST=%REPO%\dist-installer"
 
 REM --- 1. Build the fat distributable jar if it is missing -------------------
 if not exist "%INPUT%\OpenRocket-*.jar" (
-  echo [build-installer] No distributable jar found - running 'gradlew dist'...
-  call "%REPO%\gradlew.bat" dist || exit /b 1
+  echo [build-installer] No distributable jar found - running 'gradlew shadowJar'...
+  REM shadowJar builds the fat jar without the full 'check' suite that 'dist' requires.
+  call "%REPO%\gradlew.bat" shadowJar || exit /b 1
 )
 
 REM --- 2. Discover the main jar file name ------------------------------------

@@ -38,7 +38,9 @@ jobs:
         uses: gradle/actions/setup-gradle@v5
 
       - name: Build distributable jar
-        run: ./gradlew dist
+        # shadowJar produces the fat jar in build/libs without running the full
+        # 'check' suite (tests/checkstyle/spotbugs), which 'dist' would require.
+        run: ./gradlew shadowJar
 
       - name: Ensure WiX Toolset v3 is installed
         shell: pwsh
