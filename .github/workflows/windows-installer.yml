@@ -90,15 +90,50 @@ jobs:
             --win-shortcut-prompt `
             --dest dist-installer
 
+      - name: Generate SHA-256 checksum
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem dist-installer/*.exe | Select-Object -First 1
+          $hash = (Get-FileHash $exe.FullName -Algorithm SHA256).Hash.ToLower()
+          "$hash  $($exe.Name)" | Out-File -FilePath "$($exe.FullName).sha256" -Encoding ascii
+          Write-Host "SHA-256: $hash  $($exe.Name)"
+
       - name: Upload installer as build artifact
         uses: actions/upload-artifact@v5
         with:
           name: HyperRocket-Windows-Installer
-          path: dist-installer/*.exe
+          path: |
+            dist-installer/*.exe
+            dist-installer/*.sha256
 
       - name: Publish installer to GitHub Release
         if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2
         with:
-          files: dist-installer/*.exe
+          files: |
+            dist-installer/*.exe
+            dist-installer/*.sha256
+          body: |
+            ## Install HyperRocket on Windows
+
+            HyperRocket is free and open-source, but this installer is **not
+            code-signed**, so Windows SmartScreen will warn you the first time you
+            run it. This is expected — here's how to install:
+
+            1. Download **HyperRocket-${{ steps.version.outputs.version }}.exe** below.
+            2. Double-click it. If you see **"Windows protected your PC"**, click
+               **More info**, then **Run anyway**.
+            3. Follow the install wizard (license → install location → shortcuts → finish).
+
+            The app bundles its own Java runtime, so you don't need Java installed.
+
+            ### Verify your download (optional)
+            Compare the file's hash against `HyperRocket-${{ steps.version.outputs.version }}.exe.sha256`:
+            ```powershell
+            Get-FileHash .\HyperRocket-${{ steps.version.outputs.version }}.exe -Algorithm SHA256
+            ```
+
+            > **Smart App Control:** Some newer Windows 11 PCs have Smart App Control,
+            > which may block unsigned apps with no "Run anyway" option. Resolving that
+            > requires code signing — see `packaging/windows/README.md`.
           generate_release_notes: true
