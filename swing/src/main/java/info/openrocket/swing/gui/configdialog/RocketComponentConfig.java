@@ -868,10 +868,6 @@ public class RocketComponentConfig extends JPanel implements Invalidatable, Inva
 		inner.add(lblType);
 		JComboBox<BondJoint.BondType> typeCombo = new JComboBox<>(BondJoint.BondType.values());
 		typeCombo.setSelectedItem(joint.getType());
-		typeCombo.addActionListener(e -> {
-			joint.setType((BondJoint.BondType) typeCombo.getSelectedItem());
-			component.setBondJoint(joint);
-		});
 		inner.add(typeCombo, "span 2, growx, wrap");
 
 		//// Bond area
@@ -887,18 +883,64 @@ public class RocketComponentConfig extends JPanel implements Invalidatable, Inva
 		});
 		inner.add(areaSpinner, "span 2, growx, wrap");
 
-		//// Shear strength
+		//// Shear strength (auto-filled from the joint type, or custom)
 		JLabel lblShear = new JLabel(trans.get("RocketCompCfg.lbl.JointShearStrength"));
 		lblShear.setToolTipText(trans.get("RocketCompCfg.lbl.ttip.JointShearStrength"));
 		inner.add(lblShear);
-		javax.swing.JSpinner shearSpinner = new javax.swing.JSpinner(
+		final javax.swing.JSpinner shearSpinner = new javax.swing.JSpinner(
 				new javax.swing.SpinnerNumberModel(joint.getShearStrength() * 1e-6, 0.0, 10000.0, 0.5));
 		shearSpinner.setToolTipText("Shear strength in MPa");
+		final javax.swing.JCheckBox customShearCheck =
+				new javax.swing.JCheckBox(trans.get("RocketCompCfg.checkbox.CustomStrength"));
+		customShearCheck.setToolTipText(trans.get("RocketCompCfg.checkbox.ttip.CustomStrength"));
+
+		// A joint is "custom" only if it carries an explicit strength that differs from its
+		// type's typical value; a fresh/unset joint (strength 0) starts auto-filled.
+		final double[] suppress = { 0 }; // guards programmatic spinner updates from the listener
+		boolean initialCustom = joint.getShearStrength() > 1.0
+				&& Math.abs(joint.getShearStrength() - joint.getType().getTypicalShearStrength()) > 1.0;
+		customShearCheck.setSelected(initialCustom);
+		shearSpinner.setEnabled(initialCustom);
+
+		// Pushes the type's typical strength into the spinner and the model (auto mode).
+		final Runnable applyTypical = () -> {
+			double pa = joint.getType().getTypicalShearStrength();
+			suppress[0]++;
+			shearSpinner.setValue(pa * 1e-6);
+			suppress[0]--;
+			joint.setShearStrength(pa);
+			component.setBondJoint(joint);
+		};
+		if (!initialCustom) {
+			applyTypical.run();
+		}
+
+		typeCombo.addActionListener(e -> {
+			joint.setType((BondJoint.BondType) typeCombo.getSelectedItem());
+			if (!customShearCheck.isSelected()) {
+				applyTypical.run();   // auto: refill strength for the new type
+			} else {
+				component.setBondJoint(joint);
+			}
+		});
+
+		customShearCheck.addActionListener(e -> {
+			boolean custom = customShearCheck.isSelected();
+			shearSpinner.setEnabled(custom);
+			if (!custom) {
+				applyTypical.run();   // back to auto: restore the type's typical strength
+			}
+		});
+
 		shearSpinner.addChangeListener(e -> {
+			if (suppress[0] > 0) {
+				return;
+			}
 			joint.setShearStrength(((Number) shearSpinner.getValue()).doubleValue() * 1e6);
 			component.setBondJoint(joint);
 		});
-		inner.add(shearSpinner, "span 2, growx, wrap");
+		inner.add(shearSpinner, "growx");
+		inner.add(customShearCheck, "wrap");
 
 		//// Quality factor
 		JLabel lblQuality = new JLabel(trans.get("RocketCompCfg.lbl.QualityFactor"));

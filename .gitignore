@@ -117,3 +117,6 @@ docs/build
 
 # Environment files
 **/.env
+
+# Built distributable (packaged HyperRocket app/runtime; too large for git)
+/HyperRocket

@@ -9,19 +9,31 @@ package info.openrocket.core.rocketcomponent;
  */
 public class BondJoint {
 
-    /** Adhesive or fastener types, ordered roughly by shear strength. */
+    /**
+     * Adhesive or fastener types, ordered roughly by shear strength.  Each carries a
+     * representative shear strength (Pa) used to auto-fill the joint strength in the UI; these
+     * are order-of-magnitude engineering values, not lab-grade, and can always be overridden
+     * with a custom value.
+     */
     public enum BondType {
-        TAPE("Tape"),
-        WOOD_GLUE("Wood glue"),
-        CA("CA (cyanoacrylate)"),
-        EPOXY("Epoxy"),
-        SCREWS("Screws / bolts"),
-        WELD("Weld");
+        TAPE("Tape", 0.3e6),
+        WOOD_GLUE("Wood glue", 10e6),
+        CA("CA (cyanoacrylate)", 18e6),
+        EPOXY("Epoxy", 30e6),
+        SCREWS("Screws / bolts", 150e6),
+        WELD("Weld", 250e6);
 
         private final String displayName;
+        private final double typicalShearStrength;
 
-        BondType(String displayName) {
+        BondType(String displayName, double typicalShearStrength) {
             this.displayName = displayName;
+            this.typicalShearStrength = typicalShearStrength;
+        }
+
+        /** Representative shear strength (Pa) for this joint type, used to auto-fill the UI. */
+        public double getTypicalShearStrength() {
+            return typicalShearStrength;
         }
 
         @Override
