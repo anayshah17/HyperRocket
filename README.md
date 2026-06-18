@@ -2,8 +2,8 @@
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
-**HyperRocket** is an enhanced fork of the [OpenRocket](https://openrocket.info/)
-model-rocket simulator. It keeps everything that makes OpenRocket great — full
+**HyperRocket** is a model rocket simulator based on \[OpenRocket](https://openrocket.info/)
+. It keeps everything that makes OpenRocket great — full
 six-degree-of-freedom flight simulation using the Barrowman aerodynamics method
 and RK4/RK6 numerical integration — and adds a layer of **failure modeling**,
 **real-world environmental data**, **more realistic descent physics**, and an
@@ -16,6 +16,8 @@ answers *"will it survive the flight, and what will it look like coming down?"*
 > many contributors. HyperRocket is distributed under the same GNU GPL v3 license
 > and is fully compatible with the `.ork` design file format.
 
+## Disclaimer
+This project extensively used Claude Code. This code hasn't been tested against real world rocket performance, so expect deviation between simulated and real flights. 
 --------
 
 ## ✨ What HyperRocket Adds
